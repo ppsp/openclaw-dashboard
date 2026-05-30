@@ -39,6 +39,7 @@ builder.Services.AddDbContextFactory<DashboardDbContext>(options =>
 builder.Services.AddScoped<DashboardSummaryService>();
 builder.Services.AddScoped<SignalQueryService>();
 builder.Services.AddScoped<SignalReviewService>();
+builder.Services.AddScoped<PaperTradeQueryService>();
 
 var app = builder.Build();
 
