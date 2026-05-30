@@ -32,6 +32,20 @@ a, .btn-link {
     gap: 12px;
 }
 
+.json-block {
+    background: #101820;
+    border-radius: 6px;
+    color: #f4f7f7;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    margin: 12px 0 0;
+    max-height: 520px;
+    overflow: auto;
+    padding: 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 h1:focus {
     outline: none;
 }
