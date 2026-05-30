@@ -38,6 +38,7 @@ builder.Services.AddDbContextFactory<DashboardDbContext>(options =>
     options.UseSqlite(dashboardConnectionString));
 builder.Services.AddScoped<DashboardSummaryService>();
 builder.Services.AddScoped<SignalQueryService>();
+builder.Services.AddScoped<SignalReviewService>();
 
 var app = builder.Build();
 

@@ -1,6 +1,9 @@
 @page "/signals/{Id:int}"
 @using Openclaw.Dashboard.Services
 @inject SignalQueryService SignalQueryService
+@inject SignalReviewService SignalReviewService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <MudStack Spacing="3">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
@@ -24,6 +27,32 @@
     }
     else
     {
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Spacing="2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+                    <div>
+                        <MudText Typo="Typo.h6">Review Workflow</MudText>
+                        <MudText Typo="Typo.body2" Class="placeholder-line">@ReviewSummary</MudText>
+                    </div>
+                    <MudStack Row="true" Spacing="1">
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.ThumbUp" OnClick="@(() => OpenReviewDialog("approve"))">
+                            Approve
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.ThumbDown" OnClick="@(() => OpenReviewDialog("reject"))">
+                            Reject
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Visibility" OnClick="@(() => OpenReviewDialog("watch"))">
+                            Watch
+                        </MudButton>
+                    </MudStack>
+                </MudStack>
+                @if (!string.IsNullOrWhiteSpace(_review?.Note))
+                {
+                    <MudText Typo="Typo.body2">@_review.Note</MudText>
+                }
+            </MudStack>
+        </MudPaper>
+
         <MudPaper Class="pa-4" Elevation="1">
             <MudGrid>
                 <MudItem xs="12" sm="6" md="3">
@@ -103,13 +132,49 @@
     public int Id { get; set; }
 
     private SignalDetailDto? _signal;
+    private SignalReviewDto? _review;
     private bool _loading = true;
+
+    private string ReviewSummary => _review is null
+        ? "No dashboard review has been saved yet."
+        : $"{_review.Decision} | rating {_review.Rating?.ToString() ?? "-"} | {_review.Reviewer ?? "admin"} | {FormatDate(_review.UpdatedAt)}";
 
     protected override async Task OnParametersSetAsync()
     {
         _loading = true;
         _signal = await SignalQueryService.GetDetailAsync(Id);
+        _review = await SignalReviewService.GetLatestReviewAsync(Id);
         _loading = false;
+    }
+
+    private async Task OpenReviewDialog(string decision)
+    {
+        var parameters = new DialogParameters<SignalReviewDialog>
+        {
+            { dialog => dialog.SignalId, Id },
+            { dialog => dialog.Decision, decision },
+            { dialog => dialog.CurrentRating, _review?.Rating ?? _signal?.Rating },
+            { dialog => dialog.CurrentNote, _review?.Note }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<SignalReviewDialog>($"Review signal {Id}", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is null || result.Canceled || result.Data is not SignalReviewRequest request)
+        {
+            return;
+        }
+
+        await SignalReviewService.SaveReviewAsync(request);
+        _review = await SignalReviewService.GetLatestReviewAsync(Id);
+        Snackbar.Add($"Signal {Id} review saved.", Severity.Success);
     }
 
     private static string FormatDate(DateTime? value)

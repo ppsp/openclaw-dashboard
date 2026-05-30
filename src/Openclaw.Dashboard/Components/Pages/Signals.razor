@@ -1,6 +1,9 @@
 @page "/signals"
 @using Openclaw.Dashboard.Services
 @inject SignalQueryService SignalQueryService
+@inject SignalReviewService SignalReviewService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <MudStack Spacing="3">
     <div class="page-title">
@@ -71,6 +74,7 @@
             <MudTh>Tier 1 Pass</MudTh>
             <MudTh>Outcome</MudTh>
             <MudTh>Rating</MudTh>
+            <MudTh>Review</MudTh>
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Id">
@@ -83,6 +87,28 @@
             <MudTd DataLabel="Tier 1 Pass">@FormatTier1Pass(context.Tier1Pass)</MudTd>
             <MudTd DataLabel="Outcome">@FormatText(context.OutcomeStatus)</MudTd>
             <MudTd DataLabel="Rating">@FormatInt(context.Rating)</MudTd>
+            <MudTd DataLabel="Review">
+                <MudStack Row="true" Spacing="1">
+                    <MudTooltip Text="Approve">
+                        <MudIconButton Icon="@Icons.Material.Filled.ThumbUp"
+                                       Color="Color.Success"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenReviewDialog(context, "approve"))" />
+                    </MudTooltip>
+                    <MudTooltip Text="Reject">
+                        <MudIconButton Icon="@Icons.Material.Filled.ThumbDown"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenReviewDialog(context, "reject"))" />
+                    </MudTooltip>
+                    <MudTooltip Text="Watch">
+                        <MudIconButton Icon="@Icons.Material.Filled.Visibility"
+                                       Color="Color.Warning"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenReviewDialog(context, "watch"))" />
+                    </MudTooltip>
+                </MudStack>
+            </MudTd>
         </RowTemplate>
         <NoRecordsContent>
             <MudText Class="pa-4 placeholder-line">No signals match the current filters.</MudText>
@@ -154,6 +180,39 @@
         _toDate = null;
 
         return ApplyFilters();
+    }
+
+    private async Task OpenReviewDialog(SignalRow signal, string decision)
+    {
+        var parameters = new DialogParameters<SignalReviewDialog>
+        {
+            { dialog => dialog.SignalId, signal.Id },
+            { dialog => dialog.Decision, decision },
+            { dialog => dialog.CurrentRating, signal.Rating }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<SignalReviewDialog>($"Review signal {signal.Id}", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is null || result.Canceled || result.Data is not SignalReviewRequest request)
+        {
+            return;
+        }
+
+        await SignalReviewService.SaveReviewAsync(request);
+        Snackbar.Add($"Signal {signal.Id} review saved.", Severity.Success);
+
+        if (_table is not null)
+        {
+            await _table.ReloadServerData();
+        }
     }
 
     private static string FormatDate(DateTime? value)
