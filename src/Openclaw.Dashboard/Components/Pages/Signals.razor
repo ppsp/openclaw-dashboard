@@ -1,11 +1,183 @@
 @page "/signals"
+@using Openclaw.Dashboard.Services
+@inject SignalQueryService SignalQueryService
 
 <MudStack Spacing="3">
-    <MudText Typo="Typo.h4">Signals</MudText>
-    <MudPaper Class="pa-4" Elevation="1">
-        <MudText Typo="Typo.h6">Signal inbox placeholder</MudText>
-        <MudText Typo="Typo.body2" Class="placeholder-line">
-            This page will read from the existing signals.db without moving heavy processing into the web app.
+    <div class="page-title">
+        <MudText Typo="Typo.h4">Signals</MudText>
+        <MudText Typo="Typo.body1" Class="placeholder-line">
+            Paged read-only view of signals.db.
         </MudText>
+    </div>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" Label="Source" Dense="true" @bind-Value="_source">
+                    <MudSelectItem Value="@string.Empty">All sources</MudSelectItem>
+                    @foreach (var source in _sources)
+                    {
+                        <MudSelectItem Value="@source">@source</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudSelect T="string" Label="Outcome" Dense="true" @bind-Value="_outcomeStatus">
+                    <MudSelectItem Value="@string.Empty">All outcomes</MudSelectItem>
+                    <MudSelectItem Value="@("pending")">pending</MudSelectItem>
+                    <MudSelectItem Value="@("triggered")">triggered</MudSelectItem>
+                    <MudSelectItem Value="@("resolved")">resolved</MudSelectItem>
+                    <MudSelectItem Value="@("expired")">expired</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudSelect T="string" Label="Tier 1" Dense="true" @bind-Value="_tier1Pass">
+                    <MudSelectItem Value="@string.Empty">All</MudSelectItem>
+                    <MudSelectItem Value="@("1")">Pass</MudSelectItem>
+                    <MudSelectItem Value="@("0")">Reject</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudDatePicker Label="From" Margin="Margin.Dense" @bind-Date="_fromDate" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudDatePicker Label="To" Margin="Margin.Dense" @bind-Date="_toDate" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="1">
+                <MudTextField T="string" Label="Ticker" Margin="Margin.Dense" @bind-Value="_ticker" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyFilters">Apply</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="ResetFilters">Reset</MudButton>
+                </MudStack>
+            </MudItem>
+        </MudGrid>
     </MudPaper>
+
+    <MudTable @ref="_table"
+              T="SignalRow"
+              ServerData="LoadSignals"
+              Dense="true"
+              Hover="true"
+              Elevation="1"
+              RowsPerPage="25">
+        <HeaderContent>
+            <MudTh>Id</MudTh>
+            <MudTh>Ticker</MudTh>
+            <MudTh>Source</MudTh>
+            <MudTh>Discovered</MudTh>
+            <MudTh>Tier 1 Score</MudTh>
+            <MudTh>Tier 1 Pass</MudTh>
+            <MudTh>Outcome</MudTh>
+            <MudTh>Rating</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Id">
+                <MudLink Href="@($"/signals/{context.Id}")">@context.Id</MudLink>
+            </MudTd>
+            <MudTd DataLabel="Ticker">@context.Ticker</MudTd>
+            <MudTd DataLabel="Source">@context.Source</MudTd>
+            <MudTd DataLabel="Discovered">@FormatDate(context.DiscoveredAt)</MudTd>
+            <MudTd DataLabel="Tier 1 Score">@FormatInt(context.Tier1Score)</MudTd>
+            <MudTd DataLabel="Tier 1 Pass">@FormatTier1Pass(context.Tier1Pass)</MudTd>
+            <MudTd DataLabel="Outcome">@FormatText(context.OutcomeStatus)</MudTd>
+            <MudTd DataLabel="Rating">@FormatInt(context.Rating)</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-4 placeholder-line">No signals match the current filters.</MudText>
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText Class="pa-4 placeholder-line">Loading signals...</MudText>
+        </LoadingContent>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+        </PagerContent>
+    </MudTable>
 </MudStack>
+
+@code {
+    private MudTable<SignalRow>? _table;
+    private IReadOnlyList<string> _sources = [];
+    private string _source = string.Empty;
+    private string _outcomeStatus = string.Empty;
+    private string _tier1Pass = string.Empty;
+    private string? _ticker;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sources = await SignalQueryService.GetSourcesAsync();
+    }
+
+    private async Task<TableData<SignalRow>> LoadSignals(TableState state, CancellationToken cancellationToken)
+    {
+        var result = await SignalQueryService.SearchAsync(
+            BuildFilters(),
+            state.Page,
+            state.PageSize,
+            cancellationToken);
+
+        return new TableData<SignalRow>
+        {
+            Items = result.Items,
+            TotalItems = result.TotalItems
+        };
+    }
+
+    private SignalFilters BuildFilters()
+    {
+        return new SignalFilters
+        {
+            Source = string.IsNullOrWhiteSpace(_source) ? null : _source,
+            OutcomeStatus = string.IsNullOrWhiteSpace(_outcomeStatus) ? null : _outcomeStatus,
+            Tier1Pass = int.TryParse(_tier1Pass, out var tier1Pass) ? tier1Pass : null,
+            FromDate = _fromDate,
+            ToDate = _toDate,
+            Ticker = string.IsNullOrWhiteSpace(_ticker) ? null : _ticker
+        };
+    }
+
+    private Task ApplyFilters()
+    {
+        return _table?.ReloadServerData() ?? Task.CompletedTask;
+    }
+
+    private Task ResetFilters()
+    {
+        _source = string.Empty;
+        _outcomeStatus = string.Empty;
+        _tier1Pass = string.Empty;
+        _ticker = null;
+        _fromDate = null;
+        _toDate = null;
+
+        return ApplyFilters();
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value?.ToString("g") ?? "-";
+    }
+
+    private static string FormatInt(int? value)
+    {
+        return value?.ToString() ?? "-";
+    }
+
+    private static string FormatText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    private static string FormatTier1Pass(int? value)
+    {
+        return value switch
+        {
+            1 => "Pass",
+            0 => "Reject",
+            _ => "-"
+        };
+    }
+}
