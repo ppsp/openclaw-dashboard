@@ -37,6 +37,7 @@ builder.Services.AddDbContextFactory<PortfolioDbContext>(options =>
 builder.Services.AddDbContextFactory<DashboardDbContext>(options =>
     options.UseSqlite(dashboardConnectionString));
 builder.Services.AddScoped<DashboardSummaryService>();
+builder.Services.AddScoped<CronHealthService>();
 builder.Services.AddScoped<SignalQueryService>();
 builder.Services.AddScoped<SignalReviewService>();
 builder.Services.AddScoped<PaperTradeQueryService>();
