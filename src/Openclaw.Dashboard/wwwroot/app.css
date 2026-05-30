@@ -46,6 +46,32 @@ a, .btn-link {
     word-break: break-word;
 }
 
+.settings-section {
+    height: 100%;
+}
+
+.settings-row {
+    align-items: center;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+}
+
+.settings-copy {
+    min-width: 0;
+}
+
+.settings-control {
+    justify-self: stretch;
+}
+
+@media (max-width: 720px) {
+    .settings-row {
+        align-items: stretch;
+        grid-template-columns: 1fr;
+    }
+}
+
 h1:focus {
     outline: none;
 }

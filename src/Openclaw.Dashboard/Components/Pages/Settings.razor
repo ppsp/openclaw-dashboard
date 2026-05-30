@@ -1,11 +1,290 @@
 @page "/settings"
+@using System.Globalization
+@using Openclaw.Dashboard.Services
+@inject AppSettingsService SettingsService
+@inject IJSRuntime JsRuntime
+@inject ISnackbar Snackbar
 
 <MudStack Spacing="3">
-    <MudText Typo="Typo.h4">Settings</MudText>
-    <MudPaper Class="pa-4" Elevation="1">
-        <MudText Typo="Typo.h6">Dashboard settings placeholder</MudText>
-        <MudText Typo="Typo.body2" Class="placeholder-line">
-            This page will configure local paths and dashboard preferences after dashboard.db is added.
+    <div class="page-title">
+        <MudText Typo="Typo.h4">Settings</MudText>
+        <MudText Typo="Typo.body1" Class="placeholder-line">
+            Typed runtime settings stored in dashboard.db.
         </MudText>
-    </MudPaper>
+    </div>
+
+    @if (_loading)
+    {
+        <MudGrid>
+            @for (var index = 0; index < 5; index++)
+            {
+                <MudItem xs="12" lg="6">
+                    <MudSkeleton Height="220px" Animation="Animation.Wave" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var category in _categories)
+            {
+                <MudItem xs="12" lg="6">
+                    <MudPaper Class="settings-section pa-4" Elevation="1">
+                        <MudStack Spacing="3">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@category.Icon" Color="Color.Primary" />
+                                <MudText Typo="Typo.h6">@category.Name</MudText>
+                            </MudStack>
+
+                            @foreach (var setting in category.Settings)
+                            {
+                                <div class="settings-row">
+                                    <MudStack Spacing="0" Class="settings-copy">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudText Typo="Typo.subtitle2">@setting.Definition.Label</MudText>
+                                            @if (setting.Definition.IsDangerous)
+                                            {
+                                                <MudTooltip Text="Requires confirmation before saving">
+                                                    <MudIcon Icon="@Icons.Material.Filled.WarningAmber" Size="Size.Small" Color="Color.Warning" />
+                                                </MudTooltip>
+                                            }
+                                        </MudStack>
+                                        <MudText Typo="Typo.body2" Class="placeholder-line">@setting.Definition.Description</MudText>
+                                    </MudStack>
+                                    <div class="settings-control">
+                                        @RenderSettingControl(setting)
+                                    </div>
+                                </div>
+                            }
+                        </MudStack>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_error</MudAlert>
+    }
 </MudStack>
+
+@code {
+    private IReadOnlyList<AppSettingCategory> _categories = [];
+    private readonly Dictionary<string, bool> _boolValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, decimal?> _decimalValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int?> _integerValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _textValues = new(StringComparer.OrdinalIgnoreCase);
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettingsAsync();
+    }
+
+    private RenderFragment RenderSettingControl(AppSettingValue setting) => builder =>
+    {
+        var definition = setting.Definition;
+        var key = definition.Key;
+
+        switch (definition.ValueType)
+        {
+            case AppSettingValueType.Boolean:
+                builder.OpenComponent<MudSwitch<bool>>(0);
+                builder.AddAttribute(1, "Value", _boolValues[key]);
+                builder.AddAttribute(2, "ValueChanged", EventCallback.Factory.Create<bool>(this, value => SaveBooleanAsync(setting, value)));
+                builder.AddAttribute(3, "Color", Color.Primary);
+                builder.AddAttribute(4, "Size", Size.Medium);
+                builder.CloseComponent();
+                break;
+
+            case AppSettingValueType.Decimal:
+                builder.OpenComponent<MudNumericField<decimal?>>(10);
+                builder.AddAttribute(11, "Value", _decimalValues[key]);
+                builder.AddAttribute(12, "ValueChanged", EventCallback.Factory.Create<decimal?>(this, value => SaveDecimalAsync(setting, value)));
+                builder.AddAttribute(13, "Variant", Variant.Outlined);
+                builder.AddAttribute(14, "Dense", true);
+                builder.AddAttribute(15, "Min", definition.Min);
+                builder.AddAttribute(16, "Max", definition.Max);
+                builder.AddAttribute(17, "Adornment", string.IsNullOrWhiteSpace(definition.Suffix) ? Adornment.None : Adornment.End);
+                builder.AddAttribute(18, "AdornmentText", definition.Suffix);
+                builder.AddAttribute(19, "Culture", CultureInfo.InvariantCulture);
+                builder.CloseComponent();
+                break;
+
+            case AppSettingValueType.Integer:
+                builder.OpenComponent<MudNumericField<int?>>(20);
+                builder.AddAttribute(21, "Value", _integerValues[key]);
+                builder.AddAttribute(22, "ValueChanged", EventCallback.Factory.Create<int?>(this, value => SaveIntegerAsync(setting, value)));
+                builder.AddAttribute(23, "Variant", Variant.Outlined);
+                builder.AddAttribute(24, "Dense", true);
+                builder.AddAttribute(25, "Min", definition.Min is null ? null : (int?)decimal.ToInt32(definition.Min.Value));
+                builder.AddAttribute(26, "Max", definition.Max is null ? null : (int?)decimal.ToInt32(definition.Max.Value));
+                builder.AddAttribute(27, "Adornment", string.IsNullOrWhiteSpace(definition.Suffix) ? Adornment.None : Adornment.End);
+                builder.AddAttribute(28, "AdornmentText", definition.Suffix);
+                builder.CloseComponent();
+                break;
+
+            case AppSettingValueType.Select:
+                builder.OpenComponent<MudSelect<string>>(30);
+                builder.AddAttribute(31, "Value", _textValues[key]);
+                builder.AddAttribute(32, "ValueChanged", EventCallback.Factory.Create<string>(this, value => SaveTextAsync(setting, value)));
+                builder.AddAttribute(33, "Variant", Variant.Outlined);
+                builder.AddAttribute(34, "Dense", true);
+                builder.AddAttribute(35, "ChildContent", (RenderFragment)(itemsBuilder =>
+                {
+                    var sequence = 0;
+                    foreach (var option in definition.Options ?? [])
+                    {
+                        itemsBuilder.OpenComponent<MudSelectItem<string>>(sequence++);
+                        itemsBuilder.AddAttribute(sequence++, "Value", option);
+                        itemsBuilder.AddContent(sequence++, FormatOption(option));
+                        itemsBuilder.CloseComponent();
+                    }
+                }));
+                builder.CloseComponent();
+                break;
+
+            default:
+                builder.OpenComponent<MudTextField<string>>(40);
+                builder.AddAttribute(41, "Value", _textValues[key]);
+                builder.AddAttribute(42, "ValueChanged", EventCallback.Factory.Create<string>(this, value => SaveTextAsync(setting, value)));
+                builder.AddAttribute(43, "Variant", Variant.Outlined);
+                builder.AddAttribute(44, "Dense", true);
+                builder.CloseComponent();
+                break;
+        }
+    };
+
+    private async Task LoadSettingsAsync()
+    {
+        try
+        {
+            _error = null;
+            _categories = await SettingsService.GetSettingsAsync();
+            HydrateLocalValues();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Settings could not be loaded: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void HydrateLocalValues()
+    {
+        _boolValues.Clear();
+        _decimalValues.Clear();
+        _integerValues.Clear();
+        _textValues.Clear();
+
+        foreach (var setting in _categories.SelectMany(category => category.Settings))
+        {
+            var key = setting.Definition.Key;
+            switch (setting.Definition.ValueType)
+            {
+                case AppSettingValueType.Boolean:
+                    _boolValues[key] = bool.TryParse(setting.Value, out var boolValue) && boolValue;
+                    break;
+                case AppSettingValueType.Decimal:
+                    _decimalValues[key] = decimal.TryParse(setting.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out var decimalValue)
+                        ? decimalValue
+                        : null;
+                    break;
+                case AppSettingValueType.Integer:
+                    _integerValues[key] = int.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integerValue)
+                        ? integerValue
+                        : null;
+                    break;
+                default:
+                    _textValues[key] = setting.Value;
+                    break;
+            }
+        }
+    }
+
+    private async Task SaveBooleanAsync(AppSettingValue setting, bool value)
+    {
+        var oldValue = _boolValues[setting.Definition.Key];
+        _boolValues[setting.Definition.Key] = value;
+
+        if (!await TrySaveAsync(setting, value ? "true" : "false"))
+        {
+            _boolValues[setting.Definition.Key] = oldValue;
+        }
+    }
+
+    private async Task SaveDecimalAsync(AppSettingValue setting, decimal? value)
+    {
+        var key = setting.Definition.Key;
+        var oldValue = _decimalValues[key];
+        _decimalValues[key] = value;
+
+        if (value is null || !await TrySaveAsync(setting, value.Value.ToString(CultureInfo.InvariantCulture)))
+        {
+            _decimalValues[key] = oldValue;
+        }
+    }
+
+    private async Task SaveIntegerAsync(AppSettingValue setting, int? value)
+    {
+        var key = setting.Definition.Key;
+        var oldValue = _integerValues[key];
+        _integerValues[key] = value;
+
+        if (value is null || !await TrySaveAsync(setting, value.Value.ToString(CultureInfo.InvariantCulture)))
+        {
+            _integerValues[key] = oldValue;
+        }
+    }
+
+    private async Task SaveTextAsync(AppSettingValue setting, string? value)
+    {
+        var key = setting.Definition.Key;
+        var oldValue = _textValues[key];
+        _textValues[key] = value ?? string.Empty;
+
+        if (!await TrySaveAsync(setting, value ?? string.Empty))
+        {
+            _textValues[key] = oldValue;
+        }
+    }
+
+    private async Task<bool> TrySaveAsync(AppSettingValue setting, string value)
+    {
+        try
+        {
+            if (setting.Definition.IsDangerous)
+            {
+                var message = setting.Definition.DangerousMessage
+                    ?? $"Apply change to {setting.Definition.Label}?";
+                var confirmed = await JsRuntime.InvokeAsync<bool>("confirm", message);
+                if (!confirmed)
+                {
+                    return false;
+                }
+            }
+
+            await SettingsService.SaveSettingAsync(setting.Definition.Key, value);
+            Snackbar.Add($"{setting.Definition.Label} saved.", Severity.Success);
+            _categories = await SettingsService.GetSettingsAsync();
+            HydrateLocalValues();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return false;
+        }
+    }
+
+    private static string FormatOption(string option)
+    {
+        return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(option.Replace("-", " "));
+    }
+}

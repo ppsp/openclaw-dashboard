@@ -28,7 +28,7 @@ public sealed class DashboardDbContext(DbContextOptions<DashboardDbContext> opti
 
         modelBuilder.Entity<SettingsAudit>(entity =>
         {
-            entity.ToTable("settings_audits");
+            entity.ToTable("settings_audit");
             entity.HasKey(audit => audit.Id);
             entity.Property(audit => audit.SettingKey).HasMaxLength(160);
         });
