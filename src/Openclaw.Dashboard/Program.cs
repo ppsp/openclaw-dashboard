@@ -40,6 +40,7 @@ builder.Services.AddScoped<DashboardSummaryService>();
 builder.Services.AddScoped<SignalQueryService>();
 builder.Services.AddScoped<SignalReviewService>();
 builder.Services.AddScoped<PaperTradeQueryService>();
+builder.Services.AddScoped<AppSettingsService>();
 
 var app = builder.Build();
 
