@@ -1,0 +1,102 @@
+@page "/diagnostics"
+@using Microsoft.EntityFrameworkCore
+@using Openclaw.Dashboard.Data.Dashboard
+@using Openclaw.Dashboard.Data.Portfolio
+@using Openclaw.Dashboard.Data.Signals
+@inject IDbContextFactory<SignalsDbContext> SignalsDbFactory
+@inject IDbContextFactory<PortfolioDbContext> PortfolioDbFactory
+@inject IDbContextFactory<DashboardDbContext> DashboardDbFactory
+
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h4">Diagnostics</MudText>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudText Typo="Typo.h6">Database connectivity</MudText>
+        <MudText Typo="Typo.body2" Class="placeholder-line">
+            Existing Openclaw databases are opened read-only. Only dashboard.db is allowed to create its schema.
+        </MudText>
+    </MudPaper>
+
+    <MudTable Items="_checks" Dense="true" Hover="true" Elevation="1">
+        <HeaderContent>
+            <MudTh>Database</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Details</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Database">@context.Name</MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string"
+                         Color="@(context.Ok ? Color.Success : Color.Error)"
+                         Variant="Variant.Outlined"
+                         Size="Size.Small">
+                    @(context.Ok ? "Connected" : "Failed")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Details">@context.Details</MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudStack>
+
+@code {
+    private readonly List<DbCheck> _checks = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _checks.Clear();
+        _checks.Add(await CheckSignalsAsync());
+        _checks.Add(await CheckPortfolioAsync());
+        _checks.Add(await CheckDashboardAsync());
+    }
+
+    private async Task<DbCheck> CheckSignalsAsync()
+    {
+        try
+        {
+            await using var db = await SignalsDbFactory.CreateDbContextAsync();
+            var canConnect = await db.Database.CanConnectAsync();
+            var count = canConnect ? await db.Signals.CountAsync() : 0;
+
+            return new DbCheck("signals.db", canConnect, canConnect ? $"{count} signals found" : "Cannot connect");
+        }
+        catch (Exception ex)
+        {
+            return new DbCheck("signals.db", false, ex.Message);
+        }
+    }
+
+    private async Task<DbCheck> CheckPortfolioAsync()
+    {
+        try
+        {
+            await using var db = await PortfolioDbFactory.CreateDbContextAsync();
+            var canConnect = await db.Database.CanConnectAsync();
+            var count = canConnect ? await db.PaperTrades.CountAsync() : 0;
+
+            return new DbCheck("portfolio.db", canConnect, canConnect ? $"{count} paper trades found" : "Cannot connect");
+        }
+        catch (Exception ex)
+        {
+            return new DbCheck("portfolio.db", false, ex.Message);
+        }
+    }
+
+    private async Task<DbCheck> CheckDashboardAsync()
+    {
+        try
+        {
+            await using var db = await DashboardDbFactory.CreateDbContextAsync();
+            await db.Database.EnsureCreatedAsync();
+            var canConnect = await db.Database.CanConnectAsync();
+            var count = canConnect ? await db.AppSettings.CountAsync() : 0;
+
+            return new DbCheck("dashboard.db", canConnect, canConnect ? $"{count} settings found; schema is present" : "Cannot connect");
+        }
+        catch (Exception ex)
+        {
+            return new DbCheck("dashboard.db", false, ex.Message);
+        }
+    }
+
+    private sealed record DbCheck(string Name, bool Ok, string Details);
+}

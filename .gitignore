@@ -6,3 +6,6 @@ obj/
 *.suo
 *.log
 TestResults/
+data/*.db
+data/*.db-shm
+data/*.db-wal
