@@ -33,6 +33,12 @@
                           HelperText="Defaults to admin."
                           @bind-Value="_reviewer" />
 
+            <MudTextField T="string"
+                          Label="Admin Token"
+                          InputType="InputType.Password"
+                          HelperText="Required for write actions."
+                          @bind-Value="_adminToken" />
+
             <MudCheckBox T="bool"
                          Label="I confirm this admin write action."
                          Color="Color.Warning"
@@ -72,6 +78,7 @@
     private int? _rating;
     private string? _note;
     private string _reviewer = "admin";
+    private string? _adminToken;
     private bool _confirmed;
     private string? _error;
 
@@ -96,12 +103,19 @@
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_adminToken))
+        {
+            _error = "Admin token is required.";
+            return;
+        }
+
         var request = new SignalReviewRequest(
             SignalId,
             _decision,
             _rating.Value,
             _note,
-            _reviewer);
+            _reviewer,
+            _adminToken);
 
         MudDialog.Close(DialogResult.Ok(request));
     }

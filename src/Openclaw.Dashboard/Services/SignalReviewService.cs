@@ -10,6 +10,7 @@ namespace Openclaw.Dashboard.Services;
 
 public sealed class SignalReviewService(
     IDbContextFactory<DashboardDbContext> dashboardDbFactory,
+    AdminWriteGuard adminWriteGuard,
     IConfiguration configuration,
     IOptions<OpenclawPathsOptions> openclawOptions,
     ILogger<SignalReviewService> logger)
@@ -39,6 +40,8 @@ public sealed class SignalReviewService(
 
     public async Task SaveReviewAsync(SignalReviewRequest request, CancellationToken cancellationToken = default)
     {
+        adminWriteGuard.RequireToken(request.AdminToken);
+
         if (!AllowedDecisions.Contains(request.Decision))
         {
             throw new InvalidOperationException("Decision must be approve, reject, or watch.");

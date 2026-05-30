@@ -172,7 +172,16 @@
             return;
         }
 
-        await SignalReviewService.SaveReviewAsync(request);
+        try
+        {
+            await SignalReviewService.SaveReviewAsync(request);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+
         _review = await SignalReviewService.GetLatestReviewAsync(Id);
         Snackbar.Add($"Signal {Id} review saved.", Severity.Success);
     }

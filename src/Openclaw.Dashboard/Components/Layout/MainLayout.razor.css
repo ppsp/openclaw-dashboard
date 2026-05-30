@@ -1,19 +1,24 @@
 .app-title {
     font-weight: 700;
     letter-spacing: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .dashboard-content {
     padding: 24px;
+    max-width: 100%;
 }
 
 @media (max-width: 600px) {
     .dashboard-content {
-        padding: 16px;
+        padding: 12px;
     }
 
     .app-title {
         font-size: 1rem;
+        max-width: 58vw;
     }
 }
 

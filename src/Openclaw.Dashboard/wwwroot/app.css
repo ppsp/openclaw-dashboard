@@ -65,10 +65,54 @@ a, .btn-link {
     justify-self: stretch;
 }
 
+.settings-admin {
+    max-width: 720px;
+}
+
+.settings-admin-row .mud-input-control {
+    flex: 1 1 260px;
+    min-width: 0;
+}
+
+.mud-table-container {
+    overflow-x: auto;
+}
+
+.mud-table-root {
+    min-width: 760px;
+}
+
 @media (max-width: 720px) {
+    .content {
+        padding-top: .75rem;
+    }
+
+    .page-title {
+        max-width: 100%;
+    }
+
     .settings-row {
         align-items: stretch;
         grid-template-columns: 1fr;
+    }
+
+    .settings-admin-row,
+    .summary-footer {
+        align-items: stretch !important;
+        flex-direction: column !important;
+    }
+
+    .settings-admin-row .mud-icon-root {
+        display: none;
+    }
+
+    .mud-button-root {
+        min-height: 40px;
+    }
+
+    .mud-dialog {
+        margin: 8px;
+        max-height: calc(100dvh - 16px);
     }
 }
 

@@ -1,6 +1,8 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.HttpOverrides;
 using MudBlazor.Services;
+using System.Net;
 using Openclaw.Dashboard.Components;
 using Openclaw.Dashboard.Data.Dashboard;
 using Openclaw.Dashboard.Data.Portfolio;
@@ -20,6 +22,35 @@ builder.Services.AddRazorComponents()
 builder.Services.AddMudServices();
 builder.Services.Configure<OpenclawPathsOptions>(
     builder.Configuration.GetSection(OpenclawPathsOptions.SectionName));
+builder.Services.Configure<ProductionSecurityOptions>(
+    builder.Configuration.GetSection(ProductionSecurityOptions.SectionName));
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    var securityOptions = builder.Configuration
+        .GetSection(ProductionSecurityOptions.SectionName)
+        .Get<ProductionSecurityOptions>() ?? new ProductionSecurityOptions();
+
+    options.ForwardedHeaders = ParseForwardedHeaders(securityOptions.AllowedForwardedHeaders);
+    options.ForwardLimit = 1;
+
+    options.KnownProxies.Clear();
+    foreach (var proxy in securityOptions.KnownProxies)
+    {
+        if (IPAddress.TryParse(proxy, out var address))
+        {
+            options.KnownProxies.Add(address);
+        }
+    }
+
+    options.KnownIPNetworks.Clear();
+    foreach (var network in securityOptions.KnownNetworks)
+    {
+        if (TryParseNetwork(network, out var knownNetwork))
+        {
+            options.KnownIPNetworks.Add(knownNetwork);
+        }
+    }
+});
 
 var signalsConnectionString = builder.Configuration.GetConnectionString("SignalsDb")
     ?? throw new InvalidOperationException("Missing SignalsDb connection string.");
@@ -42,10 +73,13 @@ builder.Services.AddScoped<SignalQueryService>();
 builder.Services.AddScoped<SignalReviewService>();
 builder.Services.AddScoped<PaperTradeQueryService>();
 builder.Services.AddScoped<AppSettingsService>();
+builder.Services.AddScoped<AdminWriteGuard>();
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -62,6 +96,31 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+static ForwardedHeaders ParseForwardedHeaders(IEnumerable<string>? headerNames)
+{
+    var forwardedHeaders = ForwardedHeaders.None;
+
+    foreach (var headerName in headerNames ?? [])
+    {
+        forwardedHeaders |= headerName.Trim().ToLowerInvariant() switch
+        {
+            "xforwardedfor" or "x-forwarded-for" => ForwardedHeaders.XForwardedFor,
+            "xforwardedhost" or "x-forwarded-host" => ForwardedHeaders.XForwardedHost,
+            "xforwardedproto" or "x-forwarded-proto" => ForwardedHeaders.XForwardedProto,
+            "xforwardedprefix" or "x-forwarded-prefix" => ForwardedHeaders.XForwardedPrefix,
+            _ => ForwardedHeaders.None
+        };
+    }
+
+    return forwardedHeaders;
+}
+
+static bool TryParseNetwork(string network, out System.Net.IPNetwork knownNetwork)
+{
+    knownNetwork = default!;
+    return System.Net.IPNetwork.TryParse(network, out knownNetwork);
+}
 
 static void EnsureSqliteDirectoryExists(string connectionString, string contentRootPath)
 {
