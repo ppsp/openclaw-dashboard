@@ -1,11 +1,142 @@
 @page "/cron-health"
+@using Openclaw.Dashboard.Services
+@inject CronHealthService CronHealthService
 
 <MudStack Spacing="3">
-    <MudText Typo="Typo.h4">Cron Health</MudText>
-    <MudPaper Class="pa-4" Elevation="1">
-        <MudText Typo="Typo.h6">Cron status placeholder</MudText>
-        <MudText Typo="Typo.body2" Class="placeholder-line">
-            This page will summarize jobs.json, jobs-state.json, and run logs while leaving cron execution separate.
+    <div class="page-title">
+        <MudText Typo="Typo.h4">Cron Health</MudText>
+        <MudText Typo="Typo.body1" Class="placeholder-line">
+            Read-only cron status from dashboard.db and local cron JSON files.
         </MudText>
-    </MudPaper>
+    </div>
+
+    <MudStack Row="true" Spacing="2" Class="summary-footer">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow" Disabled="true">
+            Run Now
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.CheckCircle" Disabled="true">
+            Enable
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Block" Disabled="true">
+            Disable
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Article" Disabled="true">
+            View Logs
+        </MudButton>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudSkeleton Height="360px" Animation="Animation.Wave" />
+    }
+    else if (_jobs.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No cron health records were found in dashboard.db or the configured cron folder.
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_jobs" Dense="true" Hover="true" Elevation="1">
+            <HeaderContent>
+                <MudTh>Job</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Last Run</MudTh>
+                <MudTh>Next Run</MudTh>
+                <MudTh>Duration</MudTh>
+                <MudTh>Error</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Job">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.body2">@context.Name</MudText>
+                        <MudText Typo="Typo.caption" Class="placeholder-line">@context.Schedule</MudText>
+                        <MudText Typo="Typo.caption" Class="placeholder-line">@context.Source</MudText>
+                    </MudStack>
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    <MudStack Spacing="1">
+                        <MudChip T="string"
+                                 Color="@StatusColor(context.Status)"
+                                 Variant="Variant.Outlined"
+                                 Size="Size.Small">
+                            @context.Status
+                        </MudChip>
+                        @if (context.Enabled is not null)
+                        {
+                            <MudChip T="string"
+                                     Color="@(context.Enabled.Value ? Color.Success : Color.Default)"
+                                     Variant="Variant.Text"
+                                     Size="Size.Small">
+                                @(context.Enabled.Value ? "Enabled" : "Disabled")
+                            </MudChip>
+                        }
+                    </MudStack>
+                </MudTd>
+                <MudTd DataLabel="Last Run">@FormatDate(context.LastRun)</MudTd>
+                <MudTd DataLabel="Next Run">@FormatDate(context.NextRun)</MudTd>
+                <MudTd DataLabel="Duration">@context.DurationText</MudTd>
+                <MudTd DataLabel="Error">
+                    <MudText Typo="Typo.body2" Class="placeholder-line">@FormatError(context.Error)</MudText>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
 </MudStack>
+
+@code {
+    private bool _loading = true;
+    private string? _error;
+    private IReadOnlyList<CronHealthJobRow> _jobs = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _jobs = await CronHealthService.GetJobsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Cron health could not be loaded: {ex.Message}";
+            _jobs = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value is null ? "unknown" : value.Value.ToString("g");
+    }
+
+    private static string FormatError(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "none";
+        }
+
+        return value.Length <= 180 ? value : $"{value[..180]}...";
+    }
+
+    private static Color StatusColor(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "ok" or "success" or "delivered" => Color.Success,
+            "running" or "pending" => Color.Info,
+            "skipped" or "disabled" => Color.Default,
+            "unknown" => Color.Default,
+            _ => Color.Error
+        };
+    }
+}
