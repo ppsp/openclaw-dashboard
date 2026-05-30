@@ -11,4 +11,6 @@ public sealed class OpenclawPathsOptions
     public string CronPath { get; set; } = string.Empty;
 
     public string SqlitePath { get; set; } = string.Empty;
+
+    public bool MirrorSignalRatingToSignalsDb { get; set; }
 }

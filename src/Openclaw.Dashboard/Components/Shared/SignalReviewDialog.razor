@@ -1,0 +1,113 @@
+@using Openclaw.Dashboard.Services
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+                Admin confirmation is required. This writes a review and audit record to dashboard.db.
+            </MudAlert>
+
+            <MudSelect T="string" Label="Decision" @bind-Value="_decision" Required="true">
+                <MudSelectItem Value="@("approve")">Approve</MudSelectItem>
+                <MudSelectItem Value="@("reject")">Reject</MudSelectItem>
+                <MudSelectItem Value="@("watch")">Watch</MudSelectItem>
+            </MudSelect>
+
+            <MudSelect T="int?" Label="Rating" @bind-Value="_rating" Required="true">
+                <MudSelectItem T="int?" Value="1">1</MudSelectItem>
+                <MudSelectItem T="int?" Value="2">2</MudSelectItem>
+                <MudSelectItem T="int?" Value="3">3</MudSelectItem>
+                <MudSelectItem T="int?" Value="4">4</MudSelectItem>
+                <MudSelectItem T="int?" Value="5">5</MudSelectItem>
+            </MudSelect>
+
+            <MudTextField T="string"
+                          Label="Notes"
+                          Lines="4"
+                          MaxLength="2000"
+                          Counter="2000"
+                          @bind-Value="_note" />
+
+            <MudTextField T="string"
+                          Label="Reviewer"
+                          HelperText="Defaults to admin."
+                          @bind-Value="_reviewer" />
+
+            <MudCheckBox T="bool"
+                         Label="I confirm this admin write action."
+                         Color="Color.Warning"
+                         @bind-Value="_confirmed" />
+
+            @if (!string.IsNullOrWhiteSpace(_error))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_error</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!_confirmed)" OnClick="Submit">
+            Save Review
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public int SignalId { get; set; }
+
+    [Parameter]
+    public string Decision { get; set; } = "watch";
+
+    [Parameter]
+    public int? CurrentRating { get; set; }
+
+    [Parameter]
+    public string? CurrentNote { get; set; }
+
+    private string _decision = "watch";
+    private int? _rating;
+    private string? _note;
+    private string _reviewer = "admin";
+    private bool _confirmed;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        _decision = string.IsNullOrWhiteSpace(Decision) ? "watch" : Decision;
+        _rating = CurrentRating;
+        _note = CurrentNote;
+    }
+
+    private void Submit()
+    {
+        if (!_confirmed)
+        {
+            _error = "Admin confirmation is required.";
+            return;
+        }
+
+        if (_rating is null or < 1 or > 5)
+        {
+            _error = "Choose a rating from 1 to 5.";
+            return;
+        }
+
+        var request = new SignalReviewRequest(
+            SignalId,
+            _decision,
+            _rating.Value,
+            _note,
+            _reviewer);
+
+        MudDialog.Close(DialogResult.Ok(request));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}
