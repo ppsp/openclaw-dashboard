@@ -1,11 +1,202 @@
 @page "/paper-trades"
+@using Openclaw.Dashboard.Services
+@inject PaperTradeQueryService PaperTradeQueryService
 
 <MudStack Spacing="3">
-    <MudText Typo="Typo.h4">Paper Trades</MudText>
-    <MudPaper Class="pa-4" Elevation="1">
-        <MudText Typo="Typo.h6">Paper trade monitor placeholder</MudText>
-        <MudText Typo="Typo.body2" Class="placeholder-line">
-            This page will surface paper_trades and trade_checkups from portfolio.db.
+    <div class="page-title">
+        <MudText Typo="Typo.h4">Paper Trades</MudText>
+        <MudText Typo="Typo.body1" Class="placeholder-line">
+            Read-only view of portfolio.db paper_trades.
         </MudText>
+    </div>
+
+    @if (_loadingSummaries)
+    {
+        <MudGrid>
+            @for (var index = 0; index < 2; index++)
+            {
+                <MudItem xs="12" md="6">
+                    <MudSkeleton Height="156px" Animation="Animation.Wave" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var summary in _summaries)
+            {
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="metric-card pa-4" Elevation="1">
+                        <MudStack Spacing="2">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.h6">@summary.Portfolio</MudText>
+                                <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Primary" />
+                            </MudStack>
+                            <MudGrid Spacing="2">
+                                <MudItem xs="6" sm="3">
+                                    <MudText Typo="Typo.overline">Open</MudText>
+                                    <MudText Typo="Typo.h5">@summary.OpenTrades</MudText>
+                                </MudItem>
+                                <MudItem xs="6" sm="3">
+                                    <MudText Typo="Typo.overline">Closed</MudText>
+                                    <MudText Typo="Typo.h5">@summary.ClosedTrades</MudText>
+                                </MudItem>
+                                <MudItem xs="6" sm="3">
+                                    <MudText Typo="Typo.overline">Realized P/L</MudText>
+                                    <MudText Typo="Typo.h5" Color="@PnlColor(summary.RealizedPnl)">@FormatMoney(summary.RealizedPnl)</MudText>
+                                </MudItem>
+                                <MudItem xs="6" sm="3">
+                                    <MudText Typo="Typo.overline">P/L %</MudText>
+                                    <MudText Typo="Typo.h5" Color="@PnlColor(summary.RealizedPnlPct)">@FormatPercent(summary.RealizedPnlPct)</MudText>
+                                </MudItem>
+                            </MudGrid>
+                            <MudText Typo="Typo.body2" Class="placeholder-line">@summary.LinkedSignals linked signal(s)</MudText>
+                        </MudStack>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.h6">Trades</MudText>
+                <MudText Typo="Typo.body2" Class="placeholder-line">Open and closed paper trades from SQLite only.</MudText>
+            </MudStack>
+            <MudSelect T="PaperTradeStatusFilter" Label="Status" Dense="true" Value="_statusFilter" ValueChanged="SetStatusFilter" Style="min-width: 160px;">
+                <MudSelectItem Value="PaperTradeStatusFilter.All">All</MudSelectItem>
+                <MudSelectItem Value="PaperTradeStatusFilter.Open">Open</MudSelectItem>
+                <MudSelectItem Value="PaperTradeStatusFilter.Closed">Closed</MudSelectItem>
+            </MudSelect>
+        </MudStack>
     </MudPaper>
+
+    <MudTable @ref="_table"
+              T="PaperTradeRow"
+              ServerData="LoadTrades"
+              Dense="true"
+              Hover="true"
+              Elevation="1"
+              RowsPerPage="25">
+        <HeaderContent>
+            <MudTh>Ticker</MudTh>
+            <MudTh>Direction</MudTh>
+            <MudTh>Entry</MudTh>
+            <MudTh>Current / Close</MudTh>
+            <MudTh>TP</MudTh>
+            <MudTh>SL</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Realized P/L</MudTh>
+            <MudTh>Realized P/L %</MudTh>
+            <MudTh>Portfolio</MudTh>
+            <MudTh>Signal</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Ticker">@context.Ticker</MudTd>
+            <MudTd DataLabel="Direction">@FormatDirection(context)</MudTd>
+            <MudTd DataLabel="Entry">@FormatMoney(context.EntryPrice)</MudTd>
+            <MudTd DataLabel="Current / Close">@FormatMoney(context.CurrentOrClosePrice)</MudTd>
+            <MudTd DataLabel="TP">@FormatMoney(context.TpPrice)</MudTd>
+            <MudTd DataLabel="SL">@FormatMoney(context.SlPrice)</MudTd>
+            <MudTd DataLabel="Status">@FormatText(context.Status)</MudTd>
+            <MudTd DataLabel="Realized P/L">
+                <MudText Color="@PnlColor(context.RealizedPnl)">@FormatMoney(context.RealizedPnl)</MudText>
+            </MudTd>
+            <MudTd DataLabel="Realized P/L %">
+                <MudText Color="@PnlColor(context.RealizedPnlPct)">@FormatPercent(context.RealizedPnlPct)</MudText>
+            </MudTd>
+            <MudTd DataLabel="Portfolio">@context.Portfolio</MudTd>
+            <MudTd DataLabel="Signal">
+                @if (context.SignalId is not null)
+                {
+                    <MudLink Href="@($"/signals/{context.SignalId}")">@context.SignalId</MudLink>
+                }
+                else
+                {
+                    <span>-</span>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-4 placeholder-line">No paper trades match the current filter.</MudText>
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText Class="pa-4 placeholder-line">Loading paper trades...</MudText>
+        </LoadingContent>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+        </PagerContent>
+    </MudTable>
 </MudStack>
+
+@code {
+    private MudTable<PaperTradeRow>? _table;
+    private IReadOnlyList<PaperTradeSummary> _summaries = [];
+    private PaperTradeStatusFilter _statusFilter = PaperTradeStatusFilter.All;
+    private bool _loadingSummaries = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _summaries = await PaperTradeQueryService.GetPortfolioSummariesAsync();
+        _loadingSummaries = false;
+    }
+
+    private async Task<TableData<PaperTradeRow>> LoadTrades(TableState state, CancellationToken cancellationToken)
+    {
+        var result = await PaperTradeQueryService.SearchAsync(
+            _statusFilter,
+            state.Page,
+            state.PageSize,
+            cancellationToken);
+
+        return new TableData<PaperTradeRow>
+        {
+            Items = result.Items,
+            TotalItems = result.TotalItems
+        };
+    }
+
+    private async Task SetStatusFilter(PaperTradeStatusFilter statusFilter)
+    {
+        _statusFilter = statusFilter;
+
+        if (_table is not null)
+        {
+            await _table.ReloadServerData();
+        }
+    }
+
+    private static string FormatDirection(PaperTradeRow trade)
+    {
+        return string.IsNullOrWhiteSpace(trade.EntryType)
+            ? trade.Direction
+            : $"{trade.Direction} {trade.EntryType}";
+    }
+
+    private static string FormatMoney(decimal? value)
+    {
+        return value?.ToString("$#,##0.00;-$#,##0.00") ?? "-";
+    }
+
+    private static string FormatPercent(decimal? value)
+    {
+        return value.HasValue ? $"{value.Value:+#,##0.00;-#,##0.00;0.00}%" : "-";
+    }
+
+    private static string FormatText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    private static Color PnlColor(decimal? value)
+    {
+        return value switch
+        {
+            > 0m => Color.Success,
+            < 0m => Color.Error,
+            _ => Color.Default
+        };
+    }
+}
