@@ -13,6 +13,19 @@
         </MudText>
     </div>
 
+    <MudPaper Class="settings-admin pa-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="settings-admin-row">
+            <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Color="Color.Primary" />
+            <MudTextField T="string"
+                          Label="Admin Token"
+                          InputType="InputType.Password"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          HelperText="Required before any setting can be saved."
+                          @bind-Value="_adminToken" />
+        </MudStack>
+    </MudPaper>
+
     @if (_loading)
     {
         <MudGrid>
@@ -78,6 +91,7 @@
     private readonly Dictionary<string, string> _textValues = new(StringComparer.OrdinalIgnoreCase);
     private bool _loading = true;
     private string? _error;
+    private string? _adminToken;
 
     protected override async Task OnInitializedAsync()
     {
@@ -259,6 +273,12 @@
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(_adminToken))
+            {
+                Snackbar.Add("Admin token is required for write actions.", Severity.Error);
+                return false;
+            }
+
             if (setting.Definition.IsDangerous)
             {
                 var message = setting.Definition.DangerousMessage
@@ -270,7 +290,7 @@
                 }
             }
 
-            await SettingsService.SaveSettingAsync(setting.Definition.Key, value);
+            await SettingsService.SaveSettingAsync(setting.Definition.Key, value, _adminToken);
             Snackbar.Add($"{setting.Definition.Label} saved.", Severity.Success);
             _categories = await SettingsService.GetSettingsAsync();
             HydrateLocalValues();

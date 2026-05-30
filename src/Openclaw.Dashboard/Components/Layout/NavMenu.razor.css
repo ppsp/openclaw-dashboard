@@ -1,5 +1,6 @@
 .nav-shell {
     padding: 20px 12px;
+    width: 100%;
 }
 
 .nav-kicker {
@@ -7,4 +8,10 @@
     font-weight: 700;
     letter-spacing: 0;
     padding-left: 12px;
+}
+
+@media (max-width: 600px) {
+    .nav-shell {
+        padding: 12px;
+    }
 }

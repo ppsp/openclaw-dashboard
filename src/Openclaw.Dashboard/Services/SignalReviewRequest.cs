@@ -5,4 +5,5 @@ public sealed record SignalReviewRequest(
     string Decision,
     int Rating,
     string? Note,
-    string Reviewer);
+    string Reviewer,
+    string AdminToken);

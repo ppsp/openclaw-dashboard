@@ -6,7 +6,9 @@ using Openclaw.Dashboard.Data.Dashboard.Entities;
 
 namespace Openclaw.Dashboard.Services;
 
-public sealed class AppSettingsService(IDbContextFactory<DashboardDbContext> dashboardDbFactory)
+public sealed class AppSettingsService(
+    IDbContextFactory<DashboardDbContext> dashboardDbFactory,
+    AdminWriteGuard adminWriteGuard)
 {
     private static readonly IReadOnlyList<AppSettingDefinition> Definitions =
     [
@@ -63,8 +65,10 @@ public sealed class AppSettingsService(IDbContextFactory<DashboardDbContext> das
             .ToList();
     }
 
-    public async Task SaveSettingAsync(string key, string value, string actor = "dashboard", CancellationToken cancellationToken = default)
+    public async Task SaveSettingAsync(string key, string value, string adminToken, string actor = "dashboard", CancellationToken cancellationToken = default)
     {
+        adminWriteGuard.RequireToken(adminToken);
+
         var definition = Definitions.FirstOrDefault(item => item.Key.Equals(key, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"Unknown setting '{key}'.");
 
