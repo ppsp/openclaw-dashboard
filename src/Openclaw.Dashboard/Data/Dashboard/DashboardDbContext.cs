@@ -53,7 +53,7 @@ public sealed class DashboardDbContext(DbContextOptions<DashboardDbContext> opti
 
         modelBuilder.Entity<DashboardSummary>(entity =>
         {
-            entity.ToTable("dashboard_summaries");
+            entity.ToTable("dashboard_summary");
             entity.HasKey(summary => summary.Id);
             entity.HasIndex(summary => summary.SnapshotAt);
             entity.Property(summary => summary.Kind).HasMaxLength(80);

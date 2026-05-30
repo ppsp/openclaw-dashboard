@@ -6,6 +6,7 @@ using Openclaw.Dashboard.Data.Dashboard;
 using Openclaw.Dashboard.Data.Portfolio;
 using Openclaw.Dashboard.Data.Signals;
 using Openclaw.Dashboard.Options;
+using Openclaw.Dashboard.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,7 @@ builder.Services.AddDbContextFactory<PortfolioDbContext>(options =>
     options.UseSqlite(portfolioConnectionString));
 builder.Services.AddDbContextFactory<DashboardDbContext>(options =>
     options.UseSqlite(dashboardConnectionString));
+builder.Services.AddScoped<DashboardSummaryService>();
 
 var app = builder.Build();
 

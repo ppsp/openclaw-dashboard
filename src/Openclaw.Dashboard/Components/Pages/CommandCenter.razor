@@ -1,49 +1,92 @@
 @page "/"
 @page "/command-center"
+@using Openclaw.Dashboard.Services
+@inject DashboardSummaryService SummaryService
 
 <MudStack Spacing="3">
     <div class="page-title">
         <MudText Typo="Typo.h4">Command Center</MudText>
         <MudText Typo="Typo.body1" Class="placeholder-line">
-            Mission Control shell for Openclaw signals, trades, cron health, and review state.
+            Lightweight Mission Control summary from SQLite and cron state.
         </MudText>
     </div>
 
-    <MudGrid>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="metric-card pa-4" Elevation="1">
-                <MudText Typo="Typo.overline">Signals</MudText>
-                <MudText Typo="Typo.h4">--</MudText>
-                <MudText Typo="Typo.body2" Class="placeholder-line">Awaiting database wiring</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="metric-card pa-4" Elevation="1">
-                <MudText Typo="Typo.overline">Paper Trades</MudText>
-                <MudText Typo="Typo.h4">--</MudText>
-                <MudText Typo="Typo.body2" Class="placeholder-line">Portfolio data comes next</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="metric-card pa-4" Elevation="1">
-                <MudText Typo="Typo.overline">Cron Jobs</MudText>
-                <MudText Typo="Typo.h4">--</MudText>
-                <MudText Typo="Typo.body2" Class="placeholder-line">Read-only status planned</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="metric-card pa-4" Elevation="1">
-                <MudText Typo="Typo.overline">Reviews</MudText>
-                <MudText Typo="Typo.h4">--</MudText>
-                <MudText Typo="Typo.body2" Class="placeholder-line">Dashboard DB planned</MudText>
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
+    @if (_loading)
+    {
+        <MudGrid>
+            @for (var index = 0; index < 6; index++)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="2">
+                    <MudSkeleton Height="132px" Animation="Animation.Wave" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var metric in _metrics)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="2">
+                    <MudPaper Class="metric-card pa-4" Elevation="1">
+                        <MudStack Spacing="2">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.overline">@metric.Label</MudText>
+                                <MudIcon Icon="@metric.Icon" Color="@metric.Color" />
+                            </MudStack>
+                            <MudText Typo="Typo.h4">@metric.Value</MudText>
+                            <MudText Typo="Typo.body2" Class="placeholder-line">@metric.Detail</MudText>
+                        </MudStack>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
 
-    <MudPaper Class="pa-4" Elevation="1">
-        <MudText Typo="Typo.h6">Build scope</MudText>
-        <MudText Typo="Typo.body2" Class="placeholder-line">
-            This first version has no database logic and does not run jobs. It is ready for EF Core mapping in the next phase.
-        </MudText>
-    </MudPaper>
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.h6">Summary source</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">@_summarySource</MudText>
+                </MudStack>
+                <MudText Typo="Typo.body2" Class="placeholder-line">@_asOfText</MudText>
+            </MudStack>
+        </MudPaper>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
 </MudStack>
+
+@code {
+    private bool _loading = true;
+    private string? _error;
+    private string _summarySource = "Not loaded";
+    private string _asOfText = string.Empty;
+    private IReadOnlyList<CommandCenterMetric> _metrics = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var summary = await SummaryService.GetCommandCenterSummaryAsync();
+            _metrics = summary.ToMetrics();
+            _summarySource = summary.Source;
+            _asOfText = $"As of {summary.AsOf:g}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Command Center summary could not be loaded: {ex.Message}";
+            _metrics = new CommandCenterSummary().ToMetrics();
+            _summarySource = "empty fallback";
+            _asOfText = $"As of {DateTime.Now:g}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

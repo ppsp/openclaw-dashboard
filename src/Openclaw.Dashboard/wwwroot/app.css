@@ -27,6 +27,11 @@ a, .btn-link {
     color: #607d8b;
 }
 
+.summary-footer {
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
 h1:focus {
     outline: none;
 }
