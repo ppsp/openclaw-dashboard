@@ -4,10 +4,22 @@
 }
 
 .nav-kicker {
-    color: #607d8b;
+    color: #ff2bd6;
     font-weight: 700;
     letter-spacing: 0;
     padding-left: 12px;
+    text-shadow: 0 0 14px rgba(255, 43, 214, 0.42);
+}
+
+::deep .mud-nav-link {
+    border-radius: 6px;
+    margin: 2px 0;
+}
+
+::deep .mud-nav-link.active:not(.mud-nav-link-disabled) {
+    background: linear-gradient(90deg, rgba(0, 229, 255, 0.18), rgba(255, 43, 214, 0.12));
+    border: 1px solid rgba(0, 229, 255, 0.28);
+    color: #f4fbff;
 }
 
 @media (max-width: 600px) {

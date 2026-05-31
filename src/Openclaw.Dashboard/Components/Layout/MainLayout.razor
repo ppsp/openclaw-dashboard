@@ -1,6 +1,6 @@
 @inherits LayoutComponentBase
 
-<MudThemeProvider Theme="_theme" />
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -42,18 +42,35 @@
 
     private readonly MudTheme _theme = new()
     {
-        PaletteLight = new PaletteLight
+        PaletteDark = new PaletteDark
         {
-            Primary = "#2f5f5b",
-            Secondary = "#8a5a44",
-            AppbarBackground = "#263238",
-            Background = "#f6f7f8",
-            Surface = "#ffffff",
-            DrawerBackground = "#ffffff"
+            Primary = "#00e5ff",
+            Secondary = "#ff2bd6",
+            Tertiary = "#b6ff00",
+            AppbarBackground = "#0b1020",
+            AppbarText = "#f4fbff",
+            Background = "#070a12",
+            BackgroundGray = "#0b1020",
+            Surface = "#101827",
+            DrawerBackground = "#090e1a",
+            DrawerText = "#d8f7ff",
+            TextPrimary = "#f4fbff",
+            TextSecondary = "#91a9bd",
+            ActionDefault = "#00e5ff",
+            Divider = "#23364d",
+            DividerLight = "#162437",
+            LinesDefault = "#23364d",
+            TableLines = "#23364d",
+            TableStriped = "#0d1625",
+            TableHover = "#122842",
+            Success = "#2dff9a",
+            Warning = "#ffd166",
+            Error = "#ff4d7d",
+            Info = "#7c5cff"
         },
         LayoutProperties = new LayoutProperties
         {
-            DefaultBorderRadius = "6px"
+            DefaultBorderRadius = "8px"
         }
     };
 
