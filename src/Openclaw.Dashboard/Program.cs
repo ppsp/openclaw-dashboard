@@ -77,6 +77,21 @@ builder.Services.AddScoped<AdminWriteGuard>();
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        await scope.ServiceProvider
+            .GetRequiredService<SignalReviewService>()
+            .EnsureSignalsQualitySchemaAsync();
+    }
+    catch (Exception ex) when (ex is SqliteException or InvalidOperationException or IOException)
+    {
+        logger.LogWarning(ex, "Signal quality schema setup failed.");
+    }
+}
+
 // Configure the HTTP request pipeline.
 app.UseForwardedHeaders();
 

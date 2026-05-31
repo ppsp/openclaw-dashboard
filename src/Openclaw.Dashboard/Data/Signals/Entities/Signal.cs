@@ -40,6 +40,12 @@ public sealed class Signal
 
     public int? Rating { get; set; }
 
+    public string? Tier0Quality { get; set; }
+
+    public string? Tier1Quality { get; set; }
+
+    public string? Tier2Quality { get; set; }
+
     public string? OutcomeStatus { get; set; }
 
     public DateTime? TriggeredAt { get; set; }

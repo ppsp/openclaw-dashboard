@@ -16,6 +16,9 @@ public sealed class SignalQueryService(
     private static readonly Regex CashtagRegex = new(
         @"(?<![A-Za-z0-9])\$(?<ticker>[A-Z][A-Z0-9._-]{0,9})\b",
         RegexOptions.Compiled);
+    private static readonly Regex XCreatorRegex = new(
+        @"^\s*\[X@(?<handle>[A-Za-z0-9_]{1,30})\]",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public async Task<PagedResult<SignalRow>> SearchAsync(
         SignalFilters filters,
@@ -53,7 +56,10 @@ public sealed class SignalQueryService(
                     signal.Tier1Score,
                     signal.Tier1Pass,
                     signal.OutcomeStatus,
-                    signal.Rating
+                    signal.Rating,
+                    signal.Tier0Quality,
+                    signal.Tier1Quality,
+                    signal.Tier2Quality
                 })
                 .ToListAsync(cancellationToken);
 
@@ -65,6 +71,7 @@ public sealed class SignalQueryService(
                     BuildDescription(signal.RawSignal, 120),
                     BuildDescription(signal.RawSignal, 500),
                     signal.Source,
+                    ResolveSourceDisplay(signal.Source, signal.RawSignal),
                     signal.Url,
                     signal.DiscoveredAt,
                     ResolveRoute(signal.Tier1Route, signal.Tier1Dims, signal.Status),
@@ -76,7 +83,10 @@ public sealed class SignalQueryService(
                     signal.Tier1Score,
                     signal.Tier1Pass,
                     signal.OutcomeStatus,
-                    signal.Rating))
+                    signal.Rating,
+                    signal.Tier0Quality,
+                    signal.Tier1Quality,
+                    signal.Tier2Quality))
                 .ToList();
 
             return new PagedResult<SignalRow>(rows, totalItems);
@@ -106,6 +116,7 @@ public sealed class SignalQueryService(
                 signal.Id,
                 ExtractTicker(signal.Tier2Result, signal.Tier1Dims, signal.RawSignal),
                 signal.Source,
+                ResolveSourceDisplay(signal.Source, signal.RawSignal),
                 signal.Url,
                 signal.DiscoveredAt,
                 signal.Status,
@@ -117,6 +128,9 @@ public sealed class SignalQueryService(
                 signal.Tier1Score,
                 signal.Tier1Pass,
                 signal.Rating,
+                signal.Tier0Quality,
+                signal.Tier1Quality,
+                signal.Tier2Quality,
                 signal.OutcomeStatus,
                 signal.TriggeredAt,
                 signal.ResolvedAt,
@@ -367,6 +381,26 @@ public sealed class SignalQueryService(
             "new" => "new",
             _ => "-"
         };
+    }
+
+    private static string ResolveSourceDisplay(string? source, string? rawSignal)
+    {
+        var youtubeCreator = ReadStringFromJson(rawSignal, "channel");
+        if (!string.IsNullOrWhiteSpace(youtubeCreator))
+        {
+            return youtubeCreator;
+        }
+
+        if (!string.IsNullOrWhiteSpace(rawSignal))
+        {
+            var xMatch = XCreatorRegex.Match(rawSignal);
+            if (xMatch.Success)
+            {
+                return $"@{xMatch.Groups["handle"].Value}";
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(source) ? "-" : source;
     }
 
     private static string? ReadStringFromJson(string? rawJson, string propertyName)

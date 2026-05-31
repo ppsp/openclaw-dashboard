@@ -1,10 +1,8 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using Openclaw.Dashboard.Data.Dashboard;
 using Openclaw.Dashboard.Data.Dashboard.Entities;
-using Openclaw.Dashboard.Options;
 
 namespace Openclaw.Dashboard.Services;
 
@@ -12,30 +10,46 @@ public sealed class SignalReviewService(
     IDbContextFactory<DashboardDbContext> dashboardDbFactory,
     AdminWriteGuard adminWriteGuard,
     IConfiguration configuration,
-    IOptions<OpenclawPathsOptions> openclawOptions,
     ILogger<SignalReviewService> logger)
 {
     private static readonly HashSet<string> AllowedDecisions = new(StringComparer.OrdinalIgnoreCase)
     {
-        "approve",
-        "reject",
-        "watch"
+        "good",
+        "medium",
+        "bad"
+    };
+    private static readonly HashSet<string> AllowedStages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "tier0",
+        "tier1",
+        "tier2"
     };
 
-    public async Task<SignalReviewDto?> GetLatestReviewAsync(int signalId, CancellationToken cancellationToken = default)
+    public async Task<SignalReviewDto?> GetLatestReviewAsync(
+        int signalId,
+        string stage = "tier0",
+        CancellationToken cancellationToken = default)
     {
+        stage = NormalizeStage(stage);
         await using var db = await dashboardDbFactory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
 
-        var review = await db.SignalReviews
+        var reviews = await db.SignalReviews
             .AsNoTracking()
             .Where(item => item.SignalId == signalId)
             .OrderByDescending(item => item.UpdatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+        var review = reviews.FirstOrDefault(item => ReadStage(item.Status) == stage);
 
         return review is null
             ? null
-            : new SignalReviewDto(review.SignalId, review.Status, review.Rating, review.Note, review.Reviewer, review.UpdatedAt);
+            : new SignalReviewDto(
+                review.SignalId,
+                ReadStage(review.Status),
+                ReadDecision(review.Status),
+                review.Note,
+                review.Reviewer,
+                review.UpdatedAt);
     }
 
     public async Task SaveReviewAsync(SignalReviewRequest request, CancellationToken cancellationToken = default)
@@ -44,22 +58,21 @@ public sealed class SignalReviewService(
 
         if (!AllowedDecisions.Contains(request.Decision))
         {
-            throw new InvalidOperationException("Decision must be approve, reject, or watch.");
+            throw new InvalidOperationException("Decision must be good, medium, or bad.");
         }
 
-        if (request.Rating is < 1 or > 5)
-        {
-            throw new InvalidOperationException("Rating must be between 1 and 5.");
-        }
+        var stage = NormalizeStage(request.Stage);
+        var decision = request.Decision.ToLowerInvariant();
 
         await using var db = await dashboardDbFactory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
 
         var now = DateTime.Now;
-        var existing = await db.SignalReviews
+        var reviews = await db.SignalReviews
             .Where(item => item.SignalId == request.SignalId)
             .OrderByDescending(item => item.UpdatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+        var existing = reviews.FirstOrDefault(item => ReadStage(item.Status) == stage);
         var oldValue = existing is null ? null : SerializeReview(existing);
 
         if (existing is null)
@@ -72,15 +85,15 @@ public sealed class SignalReviewService(
             db.SignalReviews.Add(existing);
         }
 
-        existing.Status = request.Decision.ToLowerInvariant();
-        existing.Rating = request.Rating;
+        existing.Status = BuildStoredStatus(stage, decision);
+        existing.Rating = null;
         existing.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         existing.Reviewer = string.IsNullOrWhiteSpace(request.Reviewer) ? "admin" : request.Reviewer.Trim();
         existing.UpdatedAt = now;
 
         db.SettingsAudits.Add(new SettingsAudit
         {
-            SettingKey = $"signal:{request.SignalId}:review",
+            SettingKey = $"signal:{request.SignalId}:{stage}:quality",
             OldValue = oldValue,
             NewValue = SerializeReview(existing),
             Actor = existing.Reviewer ?? "admin",
@@ -88,16 +101,24 @@ public sealed class SignalReviewService(
         });
 
         await db.SaveChangesAsync(cancellationToken);
-        await TryMirrorRatingAsync(request.SignalId, request.Rating, cancellationToken);
+        await SaveSignalQualityAsync(request.SignalId, stage, decision, cancellationToken);
     }
 
-    private async Task TryMirrorRatingAsync(int signalId, int rating, CancellationToken cancellationToken)
+    public async Task EnsureSignalsQualitySchemaAsync(CancellationToken cancellationToken = default)
     {
-        if (!openclawOptions.Value.MirrorSignalRatingToSignalsDb)
+        var connectionString = configuration.GetConnectionString("SignalsDb");
+        if (string.IsNullOrWhiteSpace(connectionString))
         {
             return;
         }
 
+        await using var connection = new SqliteConnection(BuildReadWriteConnectionString(connectionString));
+        await connection.OpenAsync(cancellationToken);
+        await EnsureQualityColumnsAsync(connection, cancellationToken);
+    }
+
+    private async Task SaveSignalQualityAsync(int signalId, string stage, string quality, CancellationToken cancellationToken)
+    {
         var connectionString = configuration.GetConnectionString("SignalsDb");
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -106,45 +127,145 @@ public sealed class SignalReviewService(
 
         try
         {
-            var builder = new SqliteConnectionStringBuilder(connectionString)
-            {
-                Mode = SqliteOpenMode.ReadWrite
-            };
-
-            await using var connection = new SqliteConnection(builder.ConnectionString);
+            await using var connection = new SqliteConnection(BuildReadWriteConnectionString(connectionString));
             await connection.OpenAsync(cancellationToken);
-
-            await using var schemaCommand = connection.CreateCommand();
-            schemaCommand.CommandText = "PRAGMA table_info(signals);";
-
-            var hasRatingColumn = false;
-            await using (var reader = await schemaCommand.ExecuteReaderAsync(cancellationToken))
-            {
-                while (await reader.ReadAsync(cancellationToken))
-                {
-                    if (reader.GetString(1).Equals("rating", StringComparison.OrdinalIgnoreCase))
-                    {
-                        hasRatingColumn = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!hasRatingColumn)
-            {
-                return;
-            }
+            await EnsureQualityColumnsAsync(connection, cancellationToken);
 
             await using var updateCommand = connection.CreateCommand();
-            updateCommand.CommandText = "UPDATE signals SET rating = $rating WHERE id = $id;";
-            updateCommand.Parameters.AddWithValue("$rating", rating);
+            updateCommand.CommandText = $"UPDATE signals SET {QualityColumnForStage(stage)} = $quality WHERE id = $id;";
+            updateCommand.Parameters.AddWithValue("$quality", quality);
             updateCommand.Parameters.AddWithValue("$id", signalId);
             await updateCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is SqliteException or InvalidOperationException or IOException)
         {
-            logger.LogWarning(ex, "Signal rating mirror failed for signal {SignalId}.", signalId);
+            logger.LogWarning(ex, "Signal quality save failed for signal {SignalId}.", signalId);
         }
+    }
+
+    private static string BuildReadWriteConnectionString(string connectionString)
+    {
+        var builder = new SqliteConnectionStringBuilder(connectionString)
+        {
+            Mode = SqliteOpenMode.ReadWrite
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private static async Task EnsureQualityColumnsAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        var hasSignalQuality = await HasColumnAsync(connection, "signals", "signal_quality", cancellationToken);
+        var hasTier0Quality = await HasColumnAsync(connection, "signals", "tier0_quality", cancellationToken);
+
+        if (!hasTier0Quality)
+        {
+            await AddColumnAsync(connection, "tier0_quality", cancellationToken);
+        }
+
+        if (hasSignalQuality)
+        {
+            await using var migrateCommand = connection.CreateCommand();
+            migrateCommand.CommandText = """
+                UPDATE signals
+                SET tier0_quality = signal_quality
+                WHERE tier0_quality IS NULL
+                  AND signal_quality IN ('good', 'medium', 'bad');
+                """;
+            await migrateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (!await HasColumnAsync(connection, "signals", "tier1_quality", cancellationToken))
+        {
+            await AddColumnAsync(connection, "tier1_quality", cancellationToken);
+        }
+
+        if (!await HasColumnAsync(connection, "signals", "tier2_quality", cancellationToken))
+        {
+            await AddColumnAsync(connection, "tier2_quality", cancellationToken);
+        }
+    }
+
+    private static async Task AddColumnAsync(
+        SqliteConnection connection,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        await using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = $"ALTER TABLE signals ADD COLUMN {columnName} TEXT;";
+        await alterCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> HasColumnAsync(
+        SqliteConnection connection,
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        await using var schemaCommand = connection.CreateCommand();
+        schemaCommand.CommandText = $"PRAGMA table_info({tableName});";
+
+        await using var reader = await schemaCommand.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (reader.GetString(1).Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeStage(string? stage)
+    {
+        if (!AllowedStages.Contains(stage ?? string.Empty))
+        {
+            throw new InvalidOperationException("Stage must be tier0, tier1, or tier2.");
+        }
+
+        return stage!.ToLowerInvariant();
+    }
+
+    private static string BuildStoredStatus(string stage, string decision)
+    {
+        return $"{stage}:{decision}";
+    }
+
+    private static string ReadStage(string? storedStatus)
+    {
+        if (string.IsNullOrWhiteSpace(storedStatus) || !storedStatus.Contains(':'))
+        {
+            return "tier0";
+        }
+
+        var stage = storedStatus.Split(':', 2)[0];
+        return AllowedStages.Contains(stage) ? stage.ToLowerInvariant() : "tier0";
+    }
+
+    private static string ReadDecision(string? storedStatus)
+    {
+        if (string.IsNullOrWhiteSpace(storedStatus))
+        {
+            return "medium";
+        }
+
+        var decision = storedStatus.Contains(':')
+            ? storedStatus.Split(':', 2)[1]
+            : storedStatus;
+
+        return AllowedDecisions.Contains(decision) ? decision.ToLowerInvariant() : "medium";
+    }
+
+    private static string QualityColumnForStage(string stage)
+    {
+        return stage switch
+        {
+            "tier0" => "tier0_quality",
+            "tier1" => "tier1_quality",
+            "tier2" => "tier2_quality",
+            _ => throw new InvalidOperationException("Stage must be tier0, tier1, or tier2.")
+        };
     }
 
     private static string SerializeReview(SignalReview review)
@@ -152,8 +273,8 @@ public sealed class SignalReviewService(
         return JsonSerializer.Serialize(new
         {
             review.SignalId,
-            Decision = review.Status,
-            review.Rating,
+            Stage = ReadStage(review.Status),
+            Quality = ReadDecision(review.Status),
             review.Note,
             review.Reviewer,
             review.UpdatedAt
