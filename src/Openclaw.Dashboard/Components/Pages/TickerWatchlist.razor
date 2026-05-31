@@ -1,0 +1,253 @@
+@page "/ticker-watchlist"
+@using Openclaw.Dashboard.Services
+@inject TickerWatchlistService TickerWatchlistService
+@inject ISnackbar Snackbar
+
+<MudStack Spacing="3">
+    <div class="page-title">
+        <MudText Typo="Typo.h4">Ticker Watchlist</MudText>
+        <MudText Typo="Typo.body1" Class="placeholder-line">
+            Dashboard-owned ticker registry for stocks, crypto, and ETFs. Separate from Tier 1 watch states and X account watchlists.
+        </MudText>
+    </div>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" lg="8">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudStack Spacing="3">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+                        <MudTextField T="string"
+                                      Label="Search"
+                                      Margin="Margin.Dense"
+                                      Adornment="Adornment.Start"
+                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                      Immediate="true"
+                                      Value="_search"
+                                      ValueChanged="SetSearch"
+                                      Style="min-width: 260px;" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add" OnClick="NewItem">
+                            New
+                        </MudButton>
+                    </MudStack>
+
+                    <MudTabs ActivePanelIndex="_activeTab" ActivePanelIndexChanged="SetTab" Rounded="true" Elevation="0">
+                        <MudTabPanel Text="All" />
+                        <MudTabPanel Text="Stocks" />
+                        <MudTabPanel Text="Crypto" />
+                        <MudTabPanel Text="ETFs" />
+                    </MudTabs>
+
+                    <MudTable Items="_rows" Dense="true" Hover="true" Elevation="0" Loading="_loading">
+                        <HeaderContent>
+                            <MudTh>Symbol</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Sector</MudTh>
+                            <MudTh>Conviction</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Description</MudTh>
+                            <MudTh>Reason</MudTh>
+                            <MudTh>Updated</MudTh>
+                            <MudTh>Actions</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Symbol">@context.Symbol</MudTd>
+                            <MudTd DataLabel="Type">@FormatAssetClass(context.AssetClass)</MudTd>
+                            <MudTd DataLabel="Sector">@FormatText(context.Sector)</MudTd>
+                            <MudTd DataLabel="Conviction">@(context.Conviction?.ToString() ?? "-")</MudTd>
+                            <MudTd DataLabel="Status">
+                                <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)" Variant="Variant.Outlined">
+                                    @context.Status
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Description">@FormatText(context.Description)</MudTd>
+                            <MudTd DataLabel="Reason">@FormatText(context.WatchReason)</MudTd>
+                            <MudTd DataLabel="Updated">@context.UpdatedAt.ToString("g")</MudTd>
+                            <MudTd DataLabel="Actions">
+                                <MudStack Row="true" Spacing="1">
+                                    <MudTooltip Text="Edit">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="@(() => EditItem(context.Id))" />
+                                    </MudTooltip>
+                                    <MudTooltip Text="Delete">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteItem(context.Id))" />
+                                    </MudTooltip>
+                                </MudStack>
+                            </MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText Class="pa-4 placeholder-line">No ticker watchlist items match the current filter.</MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="4">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.h6">@(_editModel.Id == 0 ? "New Ticker" : "Edit Ticker")</MudText>
+                    <MudTextField T="string" Label="Symbol" Margin="Margin.Dense" @bind-Value="_editModel.Symbol" />
+                    <MudGrid Spacing="2">
+                        <MudItem xs="6">
+                            <MudSelect T="string" Label="Type" Dense="true" @bind-Value="_editModel.AssetClass">
+                                <MudSelectItem Value="@("stock")">Stock</MudSelectItem>
+                                <MudSelectItem Value="@("crypto")">Crypto</MudSelectItem>
+                                <MudSelectItem Value="@("etf")">ETF</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudSelect T="string" Label="Status" Dense="true" @bind-Value="_editModel.Status">
+                                <MudSelectItem Value="@("active")">Active</MudSelectItem>
+                                <MudSelectItem Value="@("paused")">Paused</MudSelectItem>
+                                <MudSelectItem Value="@("archived")">Archived</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                    <MudGrid Spacing="2">
+                        <MudItem xs="6">
+                            <MudNumericField T="int?" Label="Conviction" Min="1" Max="5" Margin="Margin.Dense" @bind-Value="_editModel.Conviction" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudTextField T="string" Label="Time horizon" Margin="Margin.Dense" @bind-Value="_editModel.TimeHorizon" />
+                        </MudItem>
+                    </MudGrid>
+                    <MudTextField T="string" Label="Sector" Margin="Margin.Dense" @bind-Value="_editModel.Sector" />
+                    <MudTextField T="string" Label="Description" Lines="3" Margin="Margin.Dense" @bind-Value="_editModel.Description" />
+                    <MudTextField T="string" Label="Reason" Lines="3" Margin="Margin.Dense" @bind-Value="_editModel.WatchReason" />
+                    <MudTextField T="string" Label="Notes" Lines="3" Margin="Margin.Dense" @bind-Value="_editModel.Notes" />
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveItem">
+                            Save
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="NewItem">
+                            Clear
+                        </MudButton>
+                    </MudStack>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    private IReadOnlyList<TickerWatchlistRow> _rows = [];
+    private TickerWatchlistEditModel _editModel = new();
+    private string? _search;
+    private int _activeTab;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var seeded = await TickerWatchlistService.SeedFromWorkspaceWatchlistAsync();
+        if (seeded > 0)
+        {
+            Snackbar.Add($"Seeded {seeded} ticker watchlist item(s).", Severity.Success);
+        }
+
+        await LoadRows();
+    }
+
+    private async Task SetTab(int activeTab)
+    {
+        _activeTab = activeTab;
+        await LoadRows();
+    }
+
+    private async Task SetSearch(string? search)
+    {
+        _search = search;
+        await LoadRows();
+    }
+
+    private async Task LoadRows()
+    {
+        _loading = true;
+        try
+        {
+            _rows = await TickerWatchlistService.GetRowsAsync(CurrentAssetClass(), _search);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void NewItem()
+    {
+        _editModel = new TickerWatchlistEditModel
+        {
+            AssetClass = CurrentAssetClass() ?? "stock"
+        };
+    }
+
+    private async Task EditItem(int id)
+    {
+        var model = await TickerWatchlistService.GetForEditAsync(id);
+        if (model is null)
+        {
+            Snackbar.Add("Ticker watchlist item not found.", Severity.Error);
+            return;
+        }
+
+        _editModel = model;
+    }
+
+    private async Task SaveItem()
+    {
+        try
+        {
+            await TickerWatchlistService.SaveAsync(_editModel);
+            Snackbar.Add("Ticker watchlist item saved.", Severity.Success);
+            NewItem();
+            await LoadRows();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteItem(int id)
+    {
+        await TickerWatchlistService.DeleteAsync(id);
+        Snackbar.Add("Ticker watchlist item deleted.", Severity.Success);
+        await LoadRows();
+    }
+
+    private string? CurrentAssetClass()
+    {
+        return _activeTab switch
+        {
+            1 => "stock",
+            2 => "crypto",
+            3 => "etf",
+            _ => null
+        };
+    }
+
+    private static string FormatAssetClass(string assetClass)
+    {
+        return assetClass switch
+        {
+            "stock" => "Stock",
+            "crypto" => "Crypto",
+            "etf" => "ETF",
+            _ => assetClass
+        };
+    }
+
+    private static string FormatText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    private static Color StatusColor(string status)
+    {
+        return status switch
+        {
+            "active" => Color.Success,
+            "paused" => Color.Warning,
+            "archived" => Color.Default,
+            _ => Color.Default
+        };
+    }
+}

@@ -19,6 +19,8 @@ public sealed class DashboardDbContext(DbContextOptions<DashboardDbContext> opti
 
     public DbSet<CreatorEvaluation> CreatorEvaluations => Set<CreatorEvaluation>();
 
+    public DbSet<TickerWatchlistItem> TickerWatchlistItems => Set<TickerWatchlistItem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppSetting>(entity =>
@@ -88,6 +90,23 @@ public sealed class DashboardDbContext(DbContextOptions<DashboardDbContext> opti
                 .HasForeignKey(evaluation => evaluation.CreatorSourceId)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.Property(evaluation => evaluation.Summary).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<TickerWatchlistItem>(entity =>
+        {
+            entity.ToTable("ticker_watchlist_items");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => item.Symbol).IsUnique();
+            entity.HasIndex(item => item.AssetClass);
+            entity.HasIndex(item => item.Status);
+            entity.Property(item => item.Symbol).HasMaxLength(32);
+            entity.Property(item => item.AssetClass).HasMaxLength(24);
+            entity.Property(item => item.Sector).HasMaxLength(120);
+            entity.Property(item => item.Description).HasColumnType("TEXT");
+            entity.Property(item => item.WatchReason).HasColumnType("TEXT");
+            entity.Property(item => item.Status).HasMaxLength(40);
+            entity.Property(item => item.TimeHorizon).HasMaxLength(120);
+            entity.Property(item => item.Notes).HasColumnType("TEXT");
         });
     }
 }
