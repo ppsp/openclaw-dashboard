@@ -4,6 +4,7 @@
 @inject SignalReviewService SignalReviewService
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject DashboardTimeService DashboardTime
 
 <MudStack Spacing="3">
     <div class="page-title">
@@ -81,7 +82,7 @@
             <MudTh>Description</MudTh>
             <MudTh>Source</MudTh>
             <MudTh>Link</MudTh>
-            <MudTh>Discovered</MudTh>
+            <MudTh>Discovered (ET)</MudTh>
             <MudTh>Tier 0</MudTh>
             <MudTh>Rate T0</MudTh>
         </HeaderContent>
@@ -253,9 +254,9 @@
         }
     }
 
-    private static string FormatDate(DateTime? value)
+    private string FormatDate(DateTime? value)
     {
-        return value?.ToString("g") ?? "-";
+        return DashboardTime.FormatUtcAsDashboardTime(value);
     }
 
     private static string FormatInt(int? value)

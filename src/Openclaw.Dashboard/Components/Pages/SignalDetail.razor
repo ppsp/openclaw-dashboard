@@ -4,6 +4,7 @@
 @inject SignalReviewService SignalReviewService
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject DashboardTimeService DashboardTime
 
 <MudStack Spacing="3">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
@@ -63,7 +64,7 @@
                     }
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <MudText Typo="Typo.overline">Discovered</MudText>
+                    <MudText Typo="Typo.overline">Discovered (ET)</MudText>
                     <MudText>@FormatDate(_signal.DiscoveredAt)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
@@ -113,15 +114,15 @@
                     <MudText>@FormatQuality(_signal.Tier2Quality)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <MudText Typo="Typo.overline">Triggered</MudText>
+                    <MudText Typo="Typo.overline">Triggered (ET)</MudText>
                     <MudText>@FormatDate(_signal.TriggeredAt)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <MudText Typo="Typo.overline">Resolved</MudText>
+                    <MudText Typo="Typo.overline">Resolved (ET)</MudText>
                     <MudText>@FormatDate(_signal.ResolvedAt)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <MudText Typo="Typo.overline">Monitoring Start</MudText>
+                    <MudText Typo="Typo.overline">Monitoring Start (ET)</MudText>
                     <MudText>@FormatDate(_signal.MonitoringStart)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
@@ -236,9 +237,9 @@
         Snackbar.Add($"Signal {Id} {FormatStage(request.Stage)} quality saved.", Severity.Success);
     }
 
-    private static string FormatDate(DateTime? value)
+    private string FormatDate(DateTime? value)
     {
-        return value?.ToString("g") ?? "-";
+        return DashboardTime.FormatUtcAsDashboardTime(value);
     }
 
     private static string FormatInt(int? value)
@@ -262,7 +263,7 @@
         };
     }
 
-    private static string FormatQualityMeta(SignalReviewDto? review)
+    private string FormatQualityMeta(SignalReviewDto? review)
     {
         return review is null
             ? "No label saved."

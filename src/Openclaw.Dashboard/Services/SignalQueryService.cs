@@ -8,6 +8,7 @@ namespace Openclaw.Dashboard.Services;
 
 public sealed class SignalQueryService(
     IDbContextFactory<SignalsDbContext> signalsDbFactory,
+    DashboardTimeService dashboardTime,
     ILogger<SignalQueryService> logger)
 {
     private static readonly Regex LabeledTickerRegex = new(
@@ -170,7 +171,7 @@ public sealed class SignalQueryService(
         }
     }
 
-    private static IQueryable<Signal> ApplyFilters(IQueryable<Signal> query, SignalFilters filters)
+    private IQueryable<Signal> ApplyFilters(IQueryable<Signal> query, SignalFilters filters)
     {
         if (!string.IsNullOrWhiteSpace(filters.Source))
         {
@@ -189,12 +190,14 @@ public sealed class SignalQueryService(
 
         if (filters.FromDate is not null)
         {
-            query = query.Where(signal => signal.DiscoveredAt >= filters.FromDate.Value.Date);
+            var fromUtc = dashboardTime.ConvertDashboardDateStartToUtc(filters.FromDate.Value);
+            query = query.Where(signal => signal.DiscoveredAt >= fromUtc);
         }
 
         if (filters.ToDate is not null)
         {
-            query = query.Where(signal => signal.DiscoveredAt < filters.ToDate.Value.Date.AddDays(1));
+            var toUtc = dashboardTime.ConvertDashboardDateEndExclusiveToUtc(filters.ToDate.Value);
+            query = query.Where(signal => signal.DiscoveredAt < toUtc);
         }
 
         if (!string.IsNullOrWhiteSpace(filters.Ticker))
