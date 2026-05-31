@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -10,20 +11,52 @@ using Openclaw.Dashboard.Data.Signals;
 using Openclaw.Dashboard.Options;
 using Openclaw.Dashboard.Services;
 
+if (args is ["--generate-auth-hash", var password])
+{
+    Console.WriteLine(new DashboardPasswordHasher().HashPassword(password));
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
+var dashboardAuthOptions = builder.Configuration
+    .GetSection(DashboardAuthOptions.SectionName)
+    .Get<DashboardAuthOptions>() ?? new DashboardAuthOptions();
+
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddMudServices();
 builder.Services.Configure<OpenclawPathsOptions>(
     builder.Configuration.GetSection(OpenclawPathsOptions.SectionName));
 builder.Services.Configure<ProductionSecurityOptions>(
     builder.Configuration.GetSection(ProductionSecurityOptions.SectionName));
+builder.Services.Configure<DashboardAuthOptions>(
+    builder.Configuration.GetSection(DashboardAuthOptions.SectionName));
+builder.Services.Configure<DashboardTimeOptions>(
+    builder.Configuration.GetSection(DashboardTimeOptions.SectionName));
+builder.Services
+    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = string.IsNullOrWhiteSpace(dashboardAuthOptions.CookieName)
+            ? ".OpenclawDashboard.Auth"
+            : dashboardAuthOptions.CookieName;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.LoginPath = "/login";
+        options.LogoutPath = "/logout";
+        options.AccessDeniedPath = "/login";
+        options.ExpireTimeSpan = TimeSpan.FromHours(Math.Max(1, dashboardAuthOptions.SessionHours));
+        options.SlidingExpiration = true;
+    });
+builder.Services.AddAuthorization();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     var securityOptions = builder.Configuration
@@ -76,6 +109,8 @@ builder.Services.AddScoped<AppSettingsService>();
 builder.Services.AddScoped<AdminWriteGuard>();
 builder.Services.AddScoped<CreatorSourceService>();
 builder.Services.AddScoped<TickerWatchlistService>();
+builder.Services.AddSingleton<DashboardPasswordHasher>();
+builder.Services.AddSingleton<DashboardTimeService>();
 
 var app = builder.Build();
 
@@ -112,11 +147,21 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-app.MapRazorComponents<App>()
+app.MapDashboardAuthEndpoints();
+
+var razorComponents = app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+if (dashboardAuthOptions.Enabled)
+{
+    razorComponents.RequireAuthorization();
+}
 
 app.Run();
 

@@ -13,6 +13,7 @@ public sealed class DashboardSummaryService(
     IDbContextFactory<SignalsDbContext> signalsDbFactory,
     IDbContextFactory<PortfolioDbContext> portfolioDbFactory,
     IOptions<OpenclawPathsOptions> openclawPaths,
+    DashboardTimeService dashboardTime,
     ILogger<DashboardSummaryService> logger)
 {
     private const int QueryLimit = 10_000;
@@ -95,8 +96,9 @@ public sealed class DashboardSummaryService(
         try
         {
             await using var db = await signalsDbFactory.CreateDbContextAsync(cancellationToken);
-            var today = DateTime.Today;
-            var tomorrow = today.AddDays(1);
+            var dashboardToday = dashboardTime.Today();
+            var today = dashboardTime.ConvertDashboardDateStartToUtc(dashboardToday);
+            var tomorrow = dashboardTime.ConvertDashboardDateEndExclusiveToUtc(dashboardToday);
 
             var recentSignals = db.Signals
                 .AsNoTracking()
@@ -174,7 +176,7 @@ public sealed class DashboardSummaryService(
             var activeTriggered = await recentSignals
                 .CountAsync(signal => signal.OutcomeStatus == "active" || signal.OutcomeStatus == "triggered", cancellationToken);
 
-            var now = DateTime.Now;
+            var now = DateTime.UtcNow;
             var staleWatchCandidates = await recentSignals
                 .Where(signal =>
                     (signal.Tier1Route == "watch" ||
