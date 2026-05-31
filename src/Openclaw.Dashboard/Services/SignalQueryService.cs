@@ -155,14 +155,23 @@ public sealed class SignalQueryService(
         {
             await using var db = await signalsDbFactory.CreateDbContextAsync(cancellationToken);
 
-            return await db.Signals
+            var sources = await db.Signals
                 .AsNoTracking()
                 .Where(signal => signal.Source != "")
-                .Select(signal => signal.Source)
-                .Distinct()
+                .Select(signal => new
+                {
+                    signal.Source,
+                    signal.RawSignal
+                })
+                .ToListAsync(cancellationToken);
+
+            return sources
+                .Select(signal => ResolveSourceDisplay(signal.Source, signal.RawSignal))
+                .Where(source => source != "-")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(source => source)
                 .Take(200)
-                .ToListAsync(cancellationToken);
+                .ToList();
         }
         catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
         {
@@ -175,7 +184,12 @@ public sealed class SignalQueryService(
     {
         if (!string.IsNullOrWhiteSpace(filters.Source))
         {
-            query = query.Where(signal => signal.Source == filters.Source);
+            var source = filters.Source.Trim();
+            var sourcePattern = $"%{EscapeLikePattern(source)}%";
+
+            query = query.Where(signal =>
+                signal.Source == source ||
+                EF.Functions.Like(signal.RawSignal, sourcePattern, "\\"));
         }
 
         if (!string.IsNullOrWhiteSpace(filters.OutcomeStatus))
@@ -404,6 +418,14 @@ public sealed class SignalQueryService(
         }
 
         return string.IsNullOrWhiteSpace(source) ? "-" : source;
+    }
+
+    private static string EscapeLikePattern(string value)
+    {
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("%", "\\%")
+            .Replace("_", "\\_");
     }
 
     private static string? ReadStringFromJson(string? rawJson, string propertyName)

@@ -134,6 +134,7 @@
         {
             "ok" or "success" or "delivered" => Color.Success,
             "running" or "pending" => Color.Info,
+            "warning" => Color.Warning,
             "skipped" or "disabled" => Color.Default,
             "unknown" => Color.Default,
             _ => Color.Error

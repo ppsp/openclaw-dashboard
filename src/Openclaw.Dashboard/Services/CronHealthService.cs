@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Xml.Linq;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Openclaw.Dashboard.Data.Dashboard;
@@ -21,6 +23,7 @@ public sealed class CronHealthService(
         await ReadJobsAsync(rows, cancellationToken);
         await ReadJobsStateAsync(rows, cancellationToken);
         await ReadLatestRunLogsAsync(rows, cancellationToken);
+        await ReadYouTubePipelineHealthAsync(rows, cancellationToken);
 
         return rows.Values
             .OrderByDescending(row => row.LastRun ?? DateTime.MinValue)
@@ -217,6 +220,230 @@ public sealed class CronHealthService(
         return lastLine;
     }
 
+    private async Task ReadYouTubePipelineHealthAsync(
+        IDictionary<string, CronHealthJobRow> rows,
+        CancellationToken cancellationToken)
+    {
+        await ReadYouTubeQueueHealthAsync(rows, cancellationToken);
+        await ReadYouTubeFreshnessHealthAsync(rows, cancellationToken);
+        await ReadYouTubeTranscriberHealthAsync(rows, cancellationToken);
+    }
+
+    private async Task ReadYouTubeQueueHealthAsync(
+        IDictionary<string, CronHealthJobRow> rows,
+        CancellationToken cancellationToken)
+    {
+        var queuePath = Path.Combine(openclawPaths.Value.WorkspacePath, "data", "classifier_queue.json");
+        var row = GetOrCreate(rows, "youtube-classifier-queue-backlog");
+        row.Name = "YouTube Classifier Queue Backlog";
+        row.Source = "classifier_queue.json";
+
+        if (!File.Exists(queuePath))
+        {
+            row.Status = "unknown";
+            row.Error = "Queue file was not found.";
+            return;
+        }
+
+        try
+        {
+            await using var stream = File.OpenRead(queuePath);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var items = document.RootElement.ValueKind == JsonValueKind.Array
+                ? document.RootElement.EnumerateArray().ToList()
+                : [];
+            var oldest = items
+                .Select(item => ReadDateTime(item, "queued_at"))
+                .Where(value => value is not null)
+                .Min();
+            var byChannel = items
+                .Select(item => ReadString(item, "channel") ?? "unknown")
+                .GroupBy(channel => channel)
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key)
+                .Take(5)
+                .Select(group => $"{group.Key}: {group.Count()}");
+
+            row.LastRun = oldest;
+            row.Status = items.Count == 0
+                ? "ok"
+                : oldest is not null && oldest.Value < DateTime.Now.AddHours(-24)
+                    ? "warning"
+                    : "pending";
+            row.Error = items.Count == 0
+                ? "Queue is empty."
+                : $"Queued={items.Count}; oldest={FormatHealthDate(oldest)}; {string.Join(", ", byChannel)}";
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            row.Status = "error";
+            row.Error = ex.Message;
+        }
+    }
+
+    private async Task ReadYouTubeFreshnessHealthAsync(
+        IDictionary<string, CronHealthJobRow> rows,
+        CancellationToken cancellationToken)
+    {
+        var row = GetOrCreate(rows, "youtube-channel-freshness");
+        row.Name = "YouTube Channel Freshness";
+        row.Source = "youtube_channels.json, signals.db, RSS";
+
+        try
+        {
+            var channels = await ReadYoutubeChannelsAsync(cancellationToken);
+            var latestBySource = await ReadLatestYoutubeSignalsAsync(cancellationToken);
+            var stale = new List<string>();
+            var summary = new List<string>();
+
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            foreach (var channel in channels.Take(8))
+            {
+                var dbLatest = latestBySource.TryGetValue($"YouTube/{channel.Name}", out var latest)
+                    ? latest
+                    : (DateTime?)null;
+                var rssLatest = await ReadLatestYoutubeRssPublishedAsync(httpClient, channel.Id, cancellationToken);
+
+                if (rssLatest is not null &&
+                    (dbLatest is null || rssLatest.Value.LocalDateTime > dbLatest.Value.AddHours(1)))
+                {
+                    stale.Add($"{channel.Name}: RSS {FormatHealthDate(rssLatest.Value.LocalDateTime)}, DB {FormatHealthDate(dbLatest)}");
+                }
+
+                summary.Add($"{channel.Name}: {FormatHealthDate(dbLatest)}");
+            }
+
+            row.Status = stale.Count == 0 ? "ok" : "warning";
+            row.Error = stale.Count == 0
+                ? $"Latest DB signals: {string.Join("; ", summary.Take(4))}"
+                : $"RSS newer than DB: {string.Join("; ", stale.Take(4))}";
+            row.LastRun = latestBySource.Count == 0 ? null : latestBySource.Values.Max();
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or SqliteException or HttpRequestException or TaskCanceledException)
+        {
+            row.Status = "error";
+            row.Error = ex.Message;
+        }
+    }
+
+    private async Task ReadYouTubeTranscriberHealthAsync(
+        IDictionary<string, CronHealthJobRow> rows,
+        CancellationToken cancellationToken)
+    {
+        var row = GetOrCreate(rows, "youtube-transcriber-health");
+        row.Name = "YouTube Transcriber Health";
+        row.Source = "youtube_config.json";
+        row.LastRun = DateTime.Now;
+
+        var remoteUrl = await ReadYouTubeRemoteUrlAsync(cancellationToken);
+        try
+        {
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var response = await httpClient.GetAsync($"{remoteUrl.TrimEnd('/')}/health", cancellationToken);
+            row.Status = response.IsSuccessStatusCode ? "ok" : "error";
+            row.Error = $"{remoteUrl}/health returned {(int)response.StatusCode}.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            row.Status = "error";
+            row.Error = $"{remoteUrl}/health failed: {ex.Message}";
+        }
+    }
+
+    private async Task<IReadOnlyList<YoutubeChannelHealth>> ReadYoutubeChannelsAsync(CancellationToken cancellationToken)
+    {
+        var path = Path.Combine(openclawPaths.Value.WorkspacePath, "data", "youtube_channels.json");
+        if (!File.Exists(path))
+        {
+            return [];
+        }
+
+        await using var stream = File.OpenRead(path);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        return document.RootElement.ValueKind == JsonValueKind.Array
+            ? document.RootElement
+                .EnumerateArray()
+                .Select(item => new YoutubeChannelHealth(
+                    ReadString(item, "id") ?? string.Empty,
+                    ReadString(item, "name") ?? string.Empty))
+                .Where(channel => !string.IsNullOrWhiteSpace(channel.Id) && !string.IsNullOrWhiteSpace(channel.Name))
+                .ToList()
+            : [];
+    }
+
+    private async Task<Dictionary<string, DateTime>> ReadLatestYoutubeSignalsAsync(CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        var dbPath = Path.Combine(openclawPaths.Value.SqlitePath, "signals.db");
+        if (!File.Exists(dbPath))
+        {
+            return result;
+        }
+
+        await using var connection = new SqliteConnection($"Data Source={dbPath};Mode=ReadOnly;Cache=Shared");
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT source, MAX(discovered_at)
+            FROM signals
+            WHERE source LIKE 'YouTube/%'
+            GROUP BY source;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var source = reader.GetString(0);
+            var rawDate = reader.IsDBNull(1) ? null : reader.GetString(1);
+            if (TryParseDateTime(rawDate, out var latest))
+            {
+                result[source] = latest;
+            }
+        }
+
+        return result;
+    }
+
+    private static async Task<DateTimeOffset?> ReadLatestYoutubeRssPublishedAsync(
+        HttpClient httpClient,
+        string channelId,
+        CancellationToken cancellationToken)
+    {
+        var xml = await httpClient.GetStringAsync(
+            $"https://www.youtube.com/feeds/videos.xml?channel_id={Uri.EscapeDataString(channelId)}",
+            cancellationToken);
+        var document = XDocument.Parse(xml);
+        XNamespace atom = "http://www.w3.org/2005/Atom";
+        var raw = document.Root?
+            .Elements(atom + "entry")
+            .Select(entry => entry.Element(atom + "published")?.Value)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+        return DateTimeOffset.TryParse(raw, out var published) ? published : null;
+    }
+
+    private async Task<string> ReadYouTubeRemoteUrlAsync(CancellationToken cancellationToken)
+    {
+        var path = Path.Combine(openclawPaths.Value.WorkspacePath, "data", "youtube_config.json");
+        if (!File.Exists(path))
+        {
+            return "http://192.168.1.14:8001";
+        }
+
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            return ReadString(document.RootElement, "remote_url") ?? "http://192.168.1.14:8001";
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Could not read YouTube config.");
+            return "http://192.168.1.14:8001";
+        }
+    }
+
     private static CronHealthJobRow GetOrCreate(IDictionary<string, CronHealthJobRow> rows, string jobId)
     {
         if (rows.TryGetValue(jobId, out var row))
@@ -297,6 +524,25 @@ public sealed class CronHealthService(
             : null;
     }
 
+    private static DateTime? ReadDateTime(JsonElement source, string propertyName)
+    {
+        return ReadString(source, propertyName) is { } raw && TryParseDateTime(raw, out var result)
+            ? result
+            : null;
+    }
+
+    private static bool TryParseDateTime(string? value, out DateTime result)
+    {
+        result = default;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return DateTime.TryParse(value, out result);
+    }
+
     private static DateTime? ReadUnixMs(JsonElement source, string propertyName)
     {
         var value = ReadLong(source, propertyName);
@@ -309,6 +555,11 @@ public sealed class CronHealthService(
     private static string NormalizeStatus(string? status)
     {
         return string.IsNullOrWhiteSpace(status) ? "unknown" : status;
+    }
+
+    private static string FormatHealthDate(DateTime? value)
+    {
+        return value is null ? "none" : value.Value.ToString("g");
     }
 
     private static void AppendSource(CronHealthJobRow row, string source)
@@ -324,4 +575,6 @@ public sealed class CronHealthService(
             row.Source = $"{row.Source}, {source}";
         }
     }
+
+    private sealed record YoutubeChannelHealth(string Id, string Name);
 }
