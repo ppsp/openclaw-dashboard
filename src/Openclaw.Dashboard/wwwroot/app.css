@@ -79,7 +79,19 @@ a, .btn-link {
 }
 
 .mud-table-root {
-    min-width: 760px;
+    min-width: 1120px;
+}
+
+.signal-description {
+    color: #455a64;
+    display: -webkit-box;
+    font-size: 0.78rem;
+    line-height: 1.25;
+    max-width: 360px;
+    min-width: 240px;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
 @media (max-width: 720px) {
@@ -108,6 +120,11 @@ a, .btn-link {
 
     .mud-button-root {
         min-height: 40px;
+    }
+
+    .signal-description {
+        max-width: 100%;
+        min-width: 0;
     }
 
     .mud-dialog {

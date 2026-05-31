@@ -68,7 +68,9 @@
         <HeaderContent>
             <MudTh>Id</MudTh>
             <MudTh>Ticker</MudTh>
+            <MudTh>Description</MudTh>
             <MudTh>Source</MudTh>
+            <MudTh>Link</MudTh>
             <MudTh>Discovered</MudTh>
             <MudTh>Tier 1 Score</MudTh>
             <MudTh>Tier 1 Pass</MudTh>
@@ -81,7 +83,22 @@
                 <MudLink Href="@($"/signals/{context.Id}")">@context.Id</MudLink>
             </MudTd>
             <MudTd DataLabel="Ticker">@context.Ticker</MudTd>
+            <MudTd DataLabel="Description">
+                <MudTooltip Text="@context.DescriptionTooltip" Placement="Placement.Bottom" Arrow="true">
+                    <span class="signal-description">@context.Description</span>
+                </MudTooltip>
+            </MudTd>
             <MudTd DataLabel="Source">@context.Source</MudTd>
+            <MudTd DataLabel="Link">
+                @if (!string.IsNullOrWhiteSpace(context.Url))
+                {
+                    <MudLink Href="@context.Url" Target="_blank" rel="noopener noreferrer">Open</MudLink>
+                }
+                else
+                {
+                    <span>-</span>
+                }
+            </MudTd>
             <MudTd DataLabel="Discovered">@FormatDate(context.DiscoveredAt)</MudTd>
             <MudTd DataLabel="Tier 1 Score">@FormatInt(context.Tier1Score)</MudTd>
             <MudTd DataLabel="Tier 1 Pass">@FormatTier1Pass(context.Tier1Pass)</MudTd>

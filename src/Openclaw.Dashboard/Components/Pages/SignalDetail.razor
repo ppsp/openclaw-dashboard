@@ -64,6 +64,17 @@
                     <MudText>@_signal.Source</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">Source Link</MudText>
+                    @if (!string.IsNullOrWhiteSpace(_signal.Url))
+                    {
+                        <MudLink Href="@_signal.Url" Target="_blank" rel="noopener noreferrer">Open source</MudLink>
+                    }
+                    else
+                    {
+                        <MudText>-</MudText>
+                    }
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
                     <MudText Typo="Typo.overline">Discovered</MudText>
                     <MudText>@FormatDate(_signal.DiscoveredAt)</MudText>
                 </MudItem>
