@@ -1,0 +1,308 @@
+@page "/creator-sources"
+@using Openclaw.Dashboard.Services
+@inject CreatorSourceService CreatorSourceService
+@inject ISnackbar Snackbar
+
+<MudStack Spacing="3">
+    <div class="page-title">
+        <MudText Typo="Typo.h4">Creator Sources</MudText>
+        <MudText Typo="Typo.body1" Class="placeholder-line">
+            Database-backed registry for YouTube channels and X posters, with repeatable source evaluations.
+        </MudText>
+    </div>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4" md="3">
+                <MudSelect T="string" Label="Platform" Dense="true" @bind-Value="_platform">
+                    <MudSelectItem Value="@string.Empty">All platforms</MudSelectItem>
+                    <MudSelectItem Value="@("x")">X</MudSelectItem>
+                    <MudSelectItem Value="@("youtube")">YouTube</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4" md="3">
+                <MudSelect T="string" Label="Status" Dense="true" @bind-Value="_status">
+                    <MudSelectItem Value="@string.Empty">All statuses</MudSelectItem>
+                    <MudSelectItem Value="@("active")">Active</MudSelectItem>
+                    <MudSelectItem Value="@("candidate")">Candidate</MudSelectItem>
+                    <MudSelectItem Value="@("paused")">Paused</MudSelectItem>
+                    <MudSelectItem Value="@("archived")">Archived</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudStack Row="true" Spacing="2" Class="creator-actions">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="LoadRows">
+                        Apply
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh" OnClick="SyncKnownCreators">
+                        Sync Known
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Analytics" OnClick="EvaluateAll">
+                        Evaluate All
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add" OnClick="NewCreator">
+                        New
+                    </MudButton>
+                </MudStack>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" lg="8">
+            <MudTable Items="_rows" Dense="true" Hover="true" Elevation="1" Loading="_loading">
+                <HeaderContent>
+                    <MudTh>Creator</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Trust</MudTh>
+                    <MudTh>Signals</MudTh>
+                    <MudTh>Route</MudTh>
+                    <MudTh>Labels</MudTh>
+                    <MudTh>Alpha</MudTh>
+                    <MudTh>Eval</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Creator">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.DisplayName</MudText>
+                            <MudText Typo="Typo.caption" Class="placeholder-line">@FormatCreatorKey(context)</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)" Variant="Variant.Outlined">
+                            @context.Status
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Trust">@context.TrustLevel</MudTd>
+                    <MudTd DataLabel="Signals">@context.SignalsCount</MudTd>
+                    <MudTd DataLabel="Route">@($"{context.PassCount}/{context.WatchCount}/{context.RejectCount}")</MudTd>
+                    <MudTd DataLabel="Labels">@($"{context.GoodCount}/{context.MediumCount}/{context.BadCount}")</MudTd>
+                    <MudTd DataLabel="Alpha">@FormatNumber(context.AverageAlphaScore)</MudTd>
+                    <MudTd DataLabel="Eval">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@FormatNumber(context.LatestScore)</MudText>
+                            <MudText Typo="Typo.caption" Class="placeholder-line">@FormatDate(context.LatestEvaluatedAt)</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudStack Row="true" Spacing="1">
+                            <MudTooltip Text="Edit">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="@(() => EditCreator(context.Id))" />
+                            </MudTooltip>
+                            <MudTooltip Text="Evaluate">
+                                <MudIconButton Icon="@Icons.Material.Filled.Analytics" Color="Color.Secondary" Size="Size.Small" OnClick="@(() => Evaluate(context.Id))" />
+                            </MudTooltip>
+                            <MudTooltip Text="History">
+                                <MudIconButton Icon="@Icons.Material.Filled.History" Color="Color.Info" Size="Size.Small" OnClick="@(() => LoadHistory(context.Id, context.DisplayName))" />
+                            </MudTooltip>
+                            <MudTooltip Text="Delete">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteCreator(context.Id))" />
+                            </MudTooltip>
+                        </MudStack>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Class="pa-4 placeholder-line">No creator sources yet. Use Sync Known to seed from X and YouTube.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        </MudItem>
+
+        <MudItem xs="12" lg="4">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.h6">@(_editModel.Id == 0 ? "New Creator" : "Edit Creator")</MudText>
+                    <MudSelect T="string" Label="Platform" Dense="true" @bind-Value="_editModel.Platform">
+                        <MudSelectItem Value="@("x")">X</MudSelectItem>
+                        <MudSelectItem Value="@("youtube")">YouTube</MudSelectItem>
+                    </MudSelect>
+                    <MudTextField T="string" Label="Display name" Margin="Margin.Dense" @bind-Value="_editModel.DisplayName" />
+                    <MudTextField T="string" Label="Handle / channel key" Margin="Margin.Dense" @bind-Value="_editModel.Handle" />
+                    <MudTextField T="string" Label="External ID" Margin="Margin.Dense" @bind-Value="_editModel.ExternalId" />
+                    <MudTextField T="string" Label="URL" Margin="Margin.Dense" @bind-Value="_editModel.Url" />
+                    <MudGrid Spacing="2">
+                        <MudItem xs="6">
+                            <MudSelect T="string" Label="Status" Dense="true" @bind-Value="_editModel.Status">
+                                <MudSelectItem Value="@("active")">Active</MudSelectItem>
+                                <MudSelectItem Value="@("candidate")">Candidate</MudSelectItem>
+                                <MudSelectItem Value="@("paused")">Paused</MudSelectItem>
+                                <MudSelectItem Value="@("archived")">Archived</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudSelect T="string" Label="Trust" Dense="true" @bind-Value="_editModel.TrustLevel">
+                                <MudSelectItem Value="@("normal")">Normal</MudSelectItem>
+                                <MudSelectItem Value="@("trusted")">Trusted</MudSelectItem>
+                                <MudSelectItem Value="@("speculative")">Speculative</MudSelectItem>
+                                <MudSelectItem Value="@("blocked")">Blocked</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                    <MudSwitch T="bool" Label="Scout enabled" Color="Color.Primary" @bind-Value="_editModel.ScoutEnabled" />
+                    <MudTextField T="string" Label="Notes" Lines="4" Margin="Margin.Dense" @bind-Value="_editModel.Notes" />
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveCreator">
+                            Save
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="NewCreator">
+                            Clear
+                        </MudButton>
+                    </MudStack>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-3" Elevation="1">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.h6">Evaluation History</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">@_historyTitle</MudText>
+                    @foreach (var item in _history)
+                    {
+                        <MudPaper Class="pa-3" Elevation="0" Outlined="true">
+                            <MudStack Spacing="1">
+                                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.body2">Score @item.Score.ToString("0.0")</MudText>
+                                    <MudText Typo="Typo.caption" Class="placeholder-line">@FormatDate(item.EvaluatedAt)</MudText>
+                                </MudStack>
+                                <MudText Typo="Typo.caption">@item.Summary</MudText>
+                            </MudStack>
+                        </MudPaper>
+                    }
+                    @if (_history.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="placeholder-line">Select History or run an evaluation.</MudText>
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    private IReadOnlyList<CreatorSourceRow> _rows = [];
+    private IReadOnlyList<CreatorEvaluationRow> _history = [];
+    private CreatorSourceEditModel _editModel = new();
+    private string _platform = string.Empty;
+    private string _status = string.Empty;
+    private string _historyTitle = "No source selected.";
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRows();
+        if (_rows.Count == 0)
+        {
+            await CreatorSourceService.SyncKnownCreatorsAsync();
+            await LoadRows();
+        }
+    }
+
+    private async Task LoadRows()
+    {
+        _loading = true;
+        try
+        {
+            _rows = await CreatorSourceService.GetRowsAsync(
+                string.IsNullOrWhiteSpace(_platform) ? null : _platform,
+                string.IsNullOrWhiteSpace(_status) ? null : _status);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SyncKnownCreators()
+    {
+        var inserted = await CreatorSourceService.SyncKnownCreatorsAsync();
+        Snackbar.Add($"Synced known creators. Added {inserted}.", Severity.Success);
+        await LoadRows();
+    }
+
+    private void NewCreator()
+    {
+        _editModel = new CreatorSourceEditModel();
+    }
+
+    private async Task EditCreator(int id)
+    {
+        var model = await CreatorSourceService.GetForEditAsync(id);
+        if (model is null)
+        {
+            Snackbar.Add("Creator source not found.", Severity.Error);
+            return;
+        }
+
+        _editModel = model;
+    }
+
+    private async Task SaveCreator()
+    {
+        try
+        {
+            await CreatorSourceService.SaveAsync(_editModel);
+            Snackbar.Add("Creator source saved.", Severity.Success);
+            NewCreator();
+            await LoadRows();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteCreator(int id)
+    {
+        await CreatorSourceService.DeleteAsync(id);
+        Snackbar.Add("Creator source deleted.", Severity.Success);
+        await LoadRows();
+    }
+
+    private async Task Evaluate(int id)
+    {
+        var evaluation = await CreatorSourceService.EvaluateAsync(id);
+        Snackbar.Add($"Evaluation saved: {evaluation.Score:0.0}.", Severity.Success);
+        await LoadRows();
+        await LoadHistory(id, _rows.FirstOrDefault(row => row.Id == id)?.DisplayName ?? "Selected source");
+    }
+
+    private async Task EvaluateAll()
+    {
+        var count = await CreatorSourceService.EvaluateAllAsync();
+        Snackbar.Add($"Evaluation snapshots saved for {count} sources.", Severity.Success);
+        await LoadRows();
+    }
+
+    private async Task LoadHistory(int id, string displayName)
+    {
+        _history = await CreatorSourceService.GetEvaluationHistoryAsync(id);
+        _historyTitle = displayName;
+    }
+
+    private static string FormatCreatorKey(CreatorSourceRow row)
+    {
+        var handle = string.IsNullOrWhiteSpace(row.Handle) ? "-" : row.Handle;
+        return row.Platform == "x" ? $"@{handle}" : handle;
+    }
+
+    private static string FormatNumber(double? value)
+    {
+        return value?.ToString("0.0") ?? "-";
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value?.ToString("g") ?? "-";
+    }
+
+    private static Color StatusColor(string status)
+    {
+        return status switch
+        {
+            "active" => Color.Success,
+            "candidate" => Color.Info,
+            "paused" => Color.Warning,
+            "archived" => Color.Default,
+            _ => Color.Default
+        };
+    }
+}

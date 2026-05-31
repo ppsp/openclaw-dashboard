@@ -94,6 +94,10 @@ a, .btn-link {
     -webkit-line-clamp: 2;
 }
 
+.creator-actions {
+    flex-wrap: wrap;
+}
+
 @media (max-width: 720px) {
     .content {
         padding-top: .75rem;
