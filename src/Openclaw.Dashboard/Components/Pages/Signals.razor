@@ -34,10 +34,16 @@
                 </MudSelect>
             </MudItem>
             <MudItem xs="12" sm="6" md="2">
-                <MudSelect T="string" Label="Tier 1" Dense="true" @bind-Value="_tier1Pass">
-                    <MudSelectItem Value="@string.Empty">All</MudSelectItem>
-                    <MudSelectItem Value="@("1")">Pass</MudSelectItem>
-                    <MudSelectItem Value="@("0")">Reject</MudSelectItem>
+                <MudSelect T="string" Label="Queue" Dense="true" @bind-Value="_routeView">
+                    <MudSelectItem Value="@string.Empty">All signals</MudSelectItem>
+                    <MudSelectItem Value="@("unrouted")">New / unrouted</MudSelectItem>
+                    <MudSelectItem Value="@("watch")">Watch</MudSelectItem>
+                    <MudSelectItem Value="@("tier2_pending")">Pass + fast track</MudSelectItem>
+                    <MudSelectItem Value="@("pass_pending")">Pass pending</MudSelectItem>
+                    <MudSelectItem Value="@("fast_track_pending")">Fast track</MudSelectItem>
+                    <MudSelectItem Value="@("rejected")">Rejected</MudSelectItem>
+                    <MudSelectItem Value="@("tier2_complete")">Tier 2 complete</MudSelectItem>
+                    <MudSelectItem Value="@("active")">Active / terminal</MudSelectItem>
                 </MudSelect>
             </MudItem>
             <MudItem xs="12" sm="6" md="2">
@@ -68,12 +74,17 @@
         <HeaderContent>
             <MudTh>Id</MudTh>
             <MudTh>Ticker</MudTh>
+            <MudTh>Dir</MudTh>
+            <MudTh>Route</MudTh>
+            <MudTh>Alpha</MudTh>
+            <MudTh>Ready</MudTh>
+            <MudTh>Reason</MudTh>
+            <MudTh>Next Action</MudTh>
             <MudTh>Description</MudTh>
             <MudTh>Source</MudTh>
             <MudTh>Link</MudTh>
             <MudTh>Discovered</MudTh>
-            <MudTh>Tier 1 Score</MudTh>
-            <MudTh>Tier 1 Pass</MudTh>
+            <MudTh>Status</MudTh>
             <MudTh>Outcome</MudTh>
             <MudTh>Rating</MudTh>
             <MudTh>Review</MudTh>
@@ -83,6 +94,20 @@
                 <MudLink Href="@($"/signals/{context.Id}")">@context.Id</MudLink>
             </MudTd>
             <MudTd DataLabel="Ticker">@context.Ticker</MudTd>
+            <MudTd DataLabel="Dir">@context.Direction</MudTd>
+            <MudTd DataLabel="Route">
+                <MudChip T="string" Size="Size.Small" Color="@RouteColor(context.Route)" Variant="@RouteVariant(context.Route)">
+                    @FormatRoute(context.Route)
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Alpha">@FormatInt(context.AlphaScore)</MudTd>
+            <MudTd DataLabel="Ready">@FormatInt(context.ReadinessScore)</MudTd>
+            <MudTd DataLabel="Reason">@FormatText(context.ReasonCategory)</MudTd>
+            <MudTd DataLabel="Next Action">
+                <MudTooltip Text="@context.NextAction" Placement="Placement.Bottom" Arrow="true">
+                    <span class="signal-description">@BuildShortText(context.NextAction, 72)</span>
+                </MudTooltip>
+            </MudTd>
             <MudTd DataLabel="Description">
                 <MudTooltip Text="@context.DescriptionTooltip" Placement="Placement.Bottom" Arrow="true">
                     <span class="signal-description">@context.Description</span>
@@ -100,8 +125,7 @@
                 }
             </MudTd>
             <MudTd DataLabel="Discovered">@FormatDate(context.DiscoveredAt)</MudTd>
-            <MudTd DataLabel="Tier 1 Score">@FormatInt(context.Tier1Score)</MudTd>
-            <MudTd DataLabel="Tier 1 Pass">@FormatTier1Pass(context.Tier1Pass)</MudTd>
+            <MudTd DataLabel="Status">@FormatText(context.Status)</MudTd>
             <MudTd DataLabel="Outcome">@FormatText(context.OutcomeStatus)</MudTd>
             <MudTd DataLabel="Rating">@FormatInt(context.Rating)</MudTd>
             <MudTd DataLabel="Review">
@@ -144,7 +168,7 @@
     private IReadOnlyList<string> _sources = [];
     private string _source = string.Empty;
     private string _outcomeStatus = string.Empty;
-    private string _tier1Pass = string.Empty;
+    private string _routeView = string.Empty;
     private string? _ticker;
     private DateTime? _fromDate;
     private DateTime? _toDate;
@@ -175,7 +199,7 @@
         {
             Source = string.IsNullOrWhiteSpace(_source) ? null : _source,
             OutcomeStatus = string.IsNullOrWhiteSpace(_outcomeStatus) ? null : _outcomeStatus,
-            Tier1Pass = int.TryParse(_tier1Pass, out var tier1Pass) ? tier1Pass : null,
+            RouteView = string.IsNullOrWhiteSpace(_routeView) ? null : _routeView,
             FromDate = _fromDate,
             ToDate = _toDate,
             Ticker = string.IsNullOrWhiteSpace(_ticker) ? null : _ticker
@@ -191,7 +215,7 @@
     {
         _source = string.Empty;
         _outcomeStatus = string.Empty;
-        _tier1Pass = string.Empty;
+        _routeView = string.Empty;
         _ticker = null;
         _fromDate = null;
         _toDate = null;
@@ -255,13 +279,40 @@
         return string.IsNullOrWhiteSpace(value) ? "-" : value;
     }
 
-    private static string FormatTier1Pass(int? value)
+    private static string FormatRoute(string? value)
     {
-        return value switch
+        return string.IsNullOrWhiteSpace(value)
+            ? "-"
+            : value.Replace('_', ' ');
+    }
+
+    private static Color RouteColor(string? route)
+    {
+        return route switch
         {
-            1 => "Pass",
-            0 => "Reject",
-            _ => "-"
+            "fast_track" => Color.Warning,
+            "pass" => Color.Success,
+            "watch" => Color.Info,
+            "reject" => Color.Error,
+            "new" => Color.Default,
+            _ => Color.Default
         };
+    }
+
+    private static Variant RouteVariant(string? route)
+    {
+        return route is "fast_track" or "pass" or "watch" or "reject"
+            ? Variant.Filled
+            : Variant.Outlined;
+    }
+
+    private static string BuildShortText(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "-";
+        }
+
+        return value.Length <= maxLength ? value : $"{value[..(maxLength - 3)]}...";
     }
 }

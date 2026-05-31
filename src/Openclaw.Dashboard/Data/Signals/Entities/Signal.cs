@@ -24,6 +24,16 @@ public sealed class Signal
 
     public int? Tier1Pass { get; set; }
 
+    public string? Tier1Route { get; set; }
+
+    public int? AlphaScore { get; set; }
+
+    public int? ReadinessScore { get; set; }
+
+    public string? ReasonCategory { get; set; }
+
+    public string? NextAction { get; set; }
+
     public string? Tier2Result { get; set; }
 
     public DateTime? DeliveredAt { get; set; }

@@ -83,6 +83,24 @@
                     <MudText>@FormatText(_signal.Status)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">Tier 1 Route</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="@RouteColor(_signal.Route)" Variant="@RouteVariant(_signal.Route)">
+                        @FormatRoute(_signal.Route)
+                    </MudChip>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">Alpha Score</MudText>
+                    <MudText>@FormatInt(_signal.AlphaScore)</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">Readiness Score</MudText>
+                    <MudText>@FormatInt(_signal.ReadinessScore)</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">Reason Category</MudText>
+                    <MudText>@FormatText(_signal.ReasonCategory)</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
                     <MudText Typo="Typo.overline">Tier 1 Score</MudText>
                     <MudText>@FormatInt(_signal.Tier1Score)</MudText>
                 </MudItem>
@@ -113,6 +131,10 @@
                 <MudItem xs="12" sm="6" md="3">
                     <MudText Typo="Typo.overline">TTL Days</MudText>
                     <MudText>@FormatInt(_signal.TtlDays)</MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.overline">Next Action</MudText>
+                    <MudText>@FormatText(_signal.NextAction)</MudText>
                 </MudItem>
                 <MudItem xs="12">
                     <MudText Typo="Typo.overline">Outcome Note</MudText>
@@ -220,5 +242,32 @@
             0 => "Reject",
             _ => "-"
         };
+    }
+
+    private static string FormatRoute(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? "-"
+            : value.Replace('_', ' ');
+    }
+
+    private static Color RouteColor(string? route)
+    {
+        return route switch
+        {
+            "fast_track" => Color.Warning,
+            "pass" => Color.Success,
+            "watch" => Color.Info,
+            "reject" => Color.Error,
+            "new" => Color.Default,
+            _ => Color.Default
+        };
+    }
+
+    private static Variant RouteVariant(string? route)
+    {
+        return route is "fast_track" or "pass" or "watch" or "reject"
+            ? Variant.Filled
+            : Variant.Outlined;
     }
 }
