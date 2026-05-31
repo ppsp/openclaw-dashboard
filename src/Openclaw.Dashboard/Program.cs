@@ -74,6 +74,7 @@ builder.Services.AddScoped<SignalReviewService>();
 builder.Services.AddScoped<PaperTradeQueryService>();
 builder.Services.AddScoped<AppSettingsService>();
 builder.Services.AddScoped<AdminWriteGuard>();
+builder.Services.AddScoped<CreatorSourceService>();
 
 var app = builder.Build();
 
@@ -85,6 +86,9 @@ using (var scope = app.Services.CreateScope())
         await scope.ServiceProvider
             .GetRequiredService<SignalReviewService>()
             .EnsureSignalsQualitySchemaAsync();
+        await scope.ServiceProvider
+            .GetRequiredService<CreatorSourceService>()
+            .EnsureSchemaAsync();
     }
     catch (Exception ex) when (ex is SqliteException or InvalidOperationException or IOException)
     {

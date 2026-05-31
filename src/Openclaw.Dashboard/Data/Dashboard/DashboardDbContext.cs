@@ -15,6 +15,10 @@ public sealed class DashboardDbContext(DbContextOptions<DashboardDbContext> opti
 
     public DbSet<DashboardSummary> DashboardSummaries => Set<DashboardSummary>();
 
+    public DbSet<CreatorSource> CreatorSources => Set<CreatorSource>();
+
+    public DbSet<CreatorEvaluation> CreatorEvaluations => Set<CreatorEvaluation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppSetting>(entity =>
@@ -58,6 +62,32 @@ public sealed class DashboardDbContext(DbContextOptions<DashboardDbContext> opti
             entity.HasIndex(summary => summary.SnapshotAt);
             entity.Property(summary => summary.Kind).HasMaxLength(80);
             entity.Property(summary => summary.PayloadJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CreatorSource>(entity =>
+        {
+            entity.ToTable("creator_sources");
+            entity.HasKey(source => source.Id);
+            entity.HasIndex(source => new { source.Platform, source.Handle }).IsUnique();
+            entity.Property(source => source.Platform).HasMaxLength(24);
+            entity.Property(source => source.DisplayName).HasMaxLength(160);
+            entity.Property(source => source.Handle).HasMaxLength(160);
+            entity.Property(source => source.ExternalId).HasMaxLength(180);
+            entity.Property(source => source.Status).HasMaxLength(40);
+            entity.Property(source => source.TrustLevel).HasMaxLength(40);
+            entity.Property(source => source.Notes).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CreatorEvaluation>(entity =>
+        {
+            entity.ToTable("creator_evaluations");
+            entity.HasKey(evaluation => evaluation.Id);
+            entity.HasIndex(evaluation => evaluation.CreatorSourceId);
+            entity.HasOne(evaluation => evaluation.CreatorSource)
+                .WithMany()
+                .HasForeignKey(evaluation => evaluation.CreatorSourceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(evaluation => evaluation.Summary).HasColumnType("TEXT");
         });
     }
 }
