@@ -6,7 +6,7 @@ public sealed class SignalFilters
 
     public string? OutcomeStatus { get; init; }
 
-    public int? Tier1Pass { get; init; }
+    public string? RouteView { get; init; }
 
     public DateTime? FromDate { get; init; }
 

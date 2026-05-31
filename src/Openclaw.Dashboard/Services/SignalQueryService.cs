@@ -44,6 +44,12 @@ public sealed class SignalQueryService(
                     signal.Tier2Result,
                     signal.Source,
                     signal.DiscoveredAt,
+                    signal.Status,
+                    signal.Tier1Route,
+                    signal.AlphaScore,
+                    signal.ReadinessScore,
+                    signal.ReasonCategory,
+                    signal.NextAction,
                     signal.Tier1Score,
                     signal.Tier1Pass,
                     signal.OutcomeStatus,
@@ -55,11 +61,18 @@ public sealed class SignalQueryService(
                 .Select(signal => new SignalRow(
                     signal.Id,
                     ExtractTicker(signal.Tier2Result, signal.Tier1Dims, signal.RawSignal),
+                    ReadStringFromJson(signal.Tier1Dims, "direction") ?? "-",
                     BuildDescription(signal.RawSignal, 120),
                     BuildDescription(signal.RawSignal, 500),
                     signal.Source,
                     signal.Url,
                     signal.DiscoveredAt,
+                    ResolveRoute(signal.Tier1Route, signal.Tier1Dims, signal.Status),
+                    signal.AlphaScore ?? ReadIntFromJson(signal.Tier1Dims, "alpha_score"),
+                    signal.ReadinessScore ?? ReadIntFromJson(signal.Tier1Dims, "readiness_score"),
+                    signal.ReasonCategory ?? ReadStringFromJson(signal.Tier1Dims, "reason_category") ?? "-",
+                    signal.NextAction ?? ReadStringFromJson(signal.Tier1Dims, "next_action") ?? "-",
+                    signal.Status,
                     signal.Tier1Score,
                     signal.Tier1Pass,
                     signal.OutcomeStatus,
@@ -96,6 +109,11 @@ public sealed class SignalQueryService(
                 signal.Url,
                 signal.DiscoveredAt,
                 signal.Status,
+                ResolveRoute(signal.Tier1Route, signal.Tier1Dims, signal.Status),
+                signal.AlphaScore ?? ReadIntFromJson(signal.Tier1Dims, "alpha_score"),
+                signal.ReadinessScore ?? ReadIntFromJson(signal.Tier1Dims, "readiness_score"),
+                signal.ReasonCategory ?? ReadStringFromJson(signal.Tier1Dims, "reason_category") ?? "-",
+                signal.NextAction ?? ReadStringFromJson(signal.Tier1Dims, "next_action") ?? "-",
                 signal.Tier1Score,
                 signal.Tier1Pass,
                 signal.Rating,
@@ -150,9 +168,9 @@ public sealed class SignalQueryService(
             query = query.Where(signal => signal.OutcomeStatus == filters.OutcomeStatus);
         }
 
-        if (filters.Tier1Pass is not null)
+        if (!string.IsNullOrWhiteSpace(filters.RouteView))
         {
-            query = query.Where(signal => signal.Tier1Pass == filters.Tier1Pass);
+            query = ApplyRouteFilter(query, filters.RouteView);
         }
 
         if (filters.FromDate is not null)
@@ -176,6 +194,57 @@ public sealed class SignalQueryService(
         }
 
         return query;
+    }
+
+    private static IQueryable<Signal> ApplyRouteFilter(IQueryable<Signal> query, string routeView)
+    {
+        return routeView switch
+        {
+            "unrouted" => query.Where(signal =>
+                signal.Status == "new" &&
+                (signal.Tier1Route == null || signal.Tier1Route == "")),
+            "watch" => query.Where(signal =>
+                signal.Tier1Route == "watch" ||
+                (signal.Tier1Route == null &&
+                 signal.Tier1Dims != null &&
+                 EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"watch\"%")) ||
+                signal.Status == "tier1_watch"),
+            "pass_pending" => query.Where(signal =>
+                (signal.Tier1Route == "pass" ||
+                 (signal.Tier1Route == null &&
+                  signal.Tier1Dims != null &&
+                  EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"pass\"%"))) &&
+                (signal.Tier2Result == null || signal.Tier2Result == "")),
+            "fast_track_pending" => query.Where(signal =>
+                (signal.Tier1Route == "fast_track" ||
+                 (signal.Tier1Route == null &&
+                  signal.Tier1Dims != null &&
+                  EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"fast_track\"%"))) &&
+                (signal.Tier2Result == null || signal.Tier2Result == "")),
+            "tier2_pending" => query.Where(signal =>
+                (signal.Tier1Route == "pass" ||
+                 signal.Tier1Route == "fast_track" ||
+                 (signal.Tier1Route == null &&
+                  signal.Tier1Dims != null &&
+                  (EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"pass\"%") ||
+                   EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"fast_track\"%")))) &&
+                (signal.Tier2Result == null || signal.Tier2Result == "")),
+            "rejected" => query.Where(signal =>
+                signal.Tier1Route == "reject" ||
+                (signal.Tier1Route == null &&
+                 signal.Tier1Dims != null &&
+                 EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"reject\"%")) ||
+                signal.Status == "tier1_reject"),
+            "tier2_complete" => query.Where(signal =>
+                signal.Status == "tier2_complete" ||
+                (signal.Tier2Result != null && signal.Tier2Result != "")),
+            "active" => query.Where(signal =>
+                signal.OutcomeStatus == "active" ||
+                signal.OutcomeStatus == "triggered" ||
+                signal.OutcomeStatus == "resolved" ||
+                signal.OutcomeStatus == "invalid"),
+            _ => query
+        };
     }
 
     private static string PrettyJson(string? rawJson)
@@ -279,6 +348,68 @@ public sealed class SignalQueryService(
 
         ticker = normalized;
         return true;
+    }
+
+    private static string ResolveRoute(string? route, string? tier1Dims, string? status)
+    {
+        var resolved = route ?? ReadStringFromJson(tier1Dims, "tier1_route");
+
+        if (!string.IsNullOrWhiteSpace(resolved))
+        {
+            return resolved.Trim().ToLowerInvariant();
+        }
+
+        return status switch
+        {
+            "tier1_watch" => "watch",
+            "tier1_pass" => "pass",
+            "tier1_reject" => "reject",
+            "new" => "new",
+            _ => "-"
+        };
+    }
+
+    private static string? ReadStringFromJson(string? rawJson, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return null;
+        }
+
+        using var document = TryParseJson(rawJson);
+        if (document is null ||
+            !document.RootElement.TryGetProperty(propertyName, out var value) ||
+            value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var result = value.GetString();
+        return string.IsNullOrWhiteSpace(result) ? null : result;
+    }
+
+    private static int? ReadIntFromJson(string? rawJson, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return null;
+        }
+
+        using var document = TryParseJson(rawJson);
+        if (document is null ||
+            !document.RootElement.TryGetProperty(propertyName, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+        {
+            return number;
+        }
+
+        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number)
+            ? number
+            : null;
     }
 
     private static IEnumerable<string?> ReadTickerCandidatesFromJson(string? rawJson)

@@ -74,7 +74,14 @@ public sealed class DashboardSummaryService(
         {
             ActiveSignals = signalMetrics.ActiveSignals,
             Tier1Pass = signalMetrics.Tier1Pass,
+            NewUnrouted = signalMetrics.NewUnrouted,
+            Watch = signalMetrics.Watch,
+            PassPendingTier2 = signalMetrics.PassPendingTier2,
+            FastTrackPendingTier2 = signalMetrics.FastTrackPendingTier2,
+            Rejected = signalMetrics.Rejected,
             Tier2Complete = signalMetrics.Tier2Complete,
+            ActiveTriggered = signalMetrics.ActiveTriggered,
+            StaleWatch = signalMetrics.StaleWatch,
             OpenPaperTrades = openPaperTrades,
             BrokenCrons = brokenCrons,
             TodaysSignals = signalMetrics.TodaysSignals,
@@ -101,12 +108,62 @@ public sealed class DashboardSummaryService(
                     signal.Status == null ||
                     (signal.Status != "delivered" &&
                      signal.Status != "tier1_reject" &&
+                     signal.Tier1Route != "reject" &&
                      signal.Status != "rejected" &&
                      signal.OutcomeStatus != "resolved"),
                     cancellationToken);
 
             var tier1Pass = await recentSignals
-                .CountAsync(signal => signal.Tier1Pass == 1 || signal.Status == "tier1_pass", cancellationToken);
+                .CountAsync(signal =>
+                    signal.Tier1Route == "pass" ||
+                    signal.Tier1Route == "fast_track" ||
+                    (signal.Tier1Route == null &&
+                     signal.Tier1Dims != null &&
+                     (EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"pass\"%") ||
+                      EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"fast_track\"%"))),
+                    cancellationToken);
+
+            var newUnrouted = await recentSignals
+                .CountAsync(signal =>
+                    signal.Status == "new" &&
+                    (signal.Tier1Route == null || signal.Tier1Route == ""),
+                    cancellationToken);
+
+            var watch = await recentSignals
+                .CountAsync(signal =>
+                    signal.Tier1Route == "watch" ||
+                    (signal.Tier1Route == null &&
+                     signal.Tier1Dims != null &&
+                     EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"watch\"%")) ||
+                    signal.Status == "tier1_watch",
+                    cancellationToken);
+
+            var passPendingTier2 = await recentSignals
+                .CountAsync(signal =>
+                    (signal.Tier1Route == "pass" ||
+                     (signal.Tier1Route == null &&
+                      signal.Tier1Dims != null &&
+                      EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"pass\"%"))) &&
+                    (signal.Tier2Result == null || signal.Tier2Result == ""),
+                    cancellationToken);
+
+            var fastTrackPendingTier2 = await recentSignals
+                .CountAsync(signal =>
+                    (signal.Tier1Route == "fast_track" ||
+                     (signal.Tier1Route == null &&
+                      signal.Tier1Dims != null &&
+                      EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"fast_track\"%"))) &&
+                    (signal.Tier2Result == null || signal.Tier2Result == ""),
+                    cancellationToken);
+
+            var rejected = await recentSignals
+                .CountAsync(signal =>
+                    signal.Tier1Route == "reject" ||
+                    (signal.Tier1Route == null &&
+                     signal.Tier1Dims != null &&
+                     EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"reject\"%")) ||
+                    signal.Status == "tier1_reject",
+                    cancellationToken);
 
             var tier2Complete = await recentSignals
                 .CountAsync(signal =>
@@ -114,10 +171,39 @@ public sealed class DashboardSummaryService(
                     (signal.Tier2Result != null && signal.Tier2Result != ""),
                     cancellationToken);
 
+            var activeTriggered = await recentSignals
+                .CountAsync(signal => signal.OutcomeStatus == "active" || signal.OutcomeStatus == "triggered", cancellationToken);
+
+            var now = DateTime.Now;
+            var staleWatchCandidates = await recentSignals
+                .Where(signal =>
+                    (signal.Tier1Route == "watch" ||
+                     (signal.Tier1Route == null &&
+                      signal.Tier1Dims != null &&
+                      EF.Functions.Like(signal.Tier1Dims, "%\"tier1_route\"%\"watch\"%")) ||
+                     signal.Status == "tier1_watch") &&
+                    signal.DiscoveredAt != null &&
+                    signal.TtlDays != null)
+                .Select(signal => new { signal.DiscoveredAt, signal.TtlDays })
+                .ToListAsync(cancellationToken);
+            var staleWatch = staleWatchCandidates.Count(signal =>
+                signal.DiscoveredAt!.Value.AddDays(signal.TtlDays!.Value) < now);
+
             var todaysSignals = await recentSignals
                 .CountAsync(signal => signal.DiscoveredAt >= today && signal.DiscoveredAt < tomorrow, cancellationToken);
 
-            return new SignalMetrics(activeSignals, tier1Pass, tier2Complete, todaysSignals);
+            return new SignalMetrics(
+                activeSignals,
+                tier1Pass,
+                newUnrouted,
+                watch,
+                passPendingTier2,
+                fastTrackPendingTier2,
+                rejected,
+                tier2Complete,
+                activeTriggered,
+                staleWatch,
+                todaysSignals);
         }
         catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
         {
@@ -217,8 +303,19 @@ public sealed class DashboardSummaryService(
                !status.Equals("not-requested", StringComparison.OrdinalIgnoreCase);
     }
 
-    private sealed record SignalMetrics(int ActiveSignals, int Tier1Pass, int Tier2Complete, int TodaysSignals)
+    private sealed record SignalMetrics(
+        int ActiveSignals,
+        int Tier1Pass,
+        int NewUnrouted,
+        int Watch,
+        int PassPendingTier2,
+        int FastTrackPendingTier2,
+        int Rejected,
+        int Tier2Complete,
+        int ActiveTriggered,
+        int StaleWatch,
+        int TodaysSignals)
     {
-        public static SignalMetrics Empty { get; } = new(0, 0, 0, 0);
+        public static SignalMetrics Empty { get; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 }
