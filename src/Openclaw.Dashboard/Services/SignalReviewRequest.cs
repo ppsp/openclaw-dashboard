@@ -2,8 +2,8 @@ namespace Openclaw.Dashboard.Services;
 
 public sealed record SignalReviewRequest(
     int SignalId,
+    string Stage,
     string Decision,
-    int Rating,
     string? Note,
     string Reviewer,
     string AdminToken);

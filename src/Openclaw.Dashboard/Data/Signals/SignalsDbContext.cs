@@ -33,6 +33,9 @@ public sealed class SignalsDbContext(DbContextOptions<SignalsDbContext> options)
             entity.Property(signal => signal.Tier2Result).HasColumnName("tier2_result");
             entity.Property(signal => signal.DeliveredAt).HasColumnName("delivered_at");
             entity.Property(signal => signal.Rating).HasColumnName("rating");
+            entity.Property(signal => signal.Tier0Quality).HasColumnName("tier0_quality");
+            entity.Property(signal => signal.Tier1Quality).HasColumnName("tier1_quality");
+            entity.Property(signal => signal.Tier2Quality).HasColumnName("tier2_quality");
             entity.Property(signal => signal.OutcomeStatus).HasColumnName("outcome_status");
             entity.Property(signal => signal.TriggeredAt).HasColumnName("triggered_at");
             entity.Property(signal => signal.ResolvedAt).HasColumnName("resolved_at");

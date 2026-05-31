@@ -7,6 +7,7 @@ public sealed record SignalRow(
     string Description,
     string DescriptionTooltip,
     string Source,
+    string SourceDisplay,
     string? Url,
     DateTime? DiscoveredAt,
     string Route,
@@ -18,4 +19,7 @@ public sealed record SignalRow(
     int? Tier1Score,
     int? Tier1Pass,
     string? OutcomeStatus,
-    int? Rating);
+    int? Rating,
+    string? Tier0Quality,
+    string? Tier1Quality,
+    string? Tier2Quality);

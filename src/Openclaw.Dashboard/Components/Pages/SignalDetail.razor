@@ -31,25 +31,13 @@
             <MudStack Spacing="2">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
                     <div>
-                        <MudText Typo="Typo.h6">Review Workflow</MudText>
-                        <MudText Typo="Typo.body2" Class="placeholder-line">@ReviewSummary</MudText>
+                        <MudText Typo="Typo.h6">Quality Labels</MudText>
+                        <MudText Typo="Typo.body2" Class="placeholder-line">Rate the raw signal, Tier 1 classification, and Tier 2 trade plan separately.</MudText>
                     </div>
-                    <MudStack Row="true" Spacing="1">
-                        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.ThumbUp" OnClick="@(() => OpenReviewDialog("approve"))">
-                            Approve
-                        </MudButton>
-                        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.ThumbDown" OnClick="@(() => OpenReviewDialog("reject"))">
-                            Reject
-                        </MudButton>
-                        <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Visibility" OnClick="@(() => OpenReviewDialog("watch"))">
-                            Watch
-                        </MudButton>
-                    </MudStack>
                 </MudStack>
-                @if (!string.IsNullOrWhiteSpace(_review?.Note))
-                {
-                    <MudText Typo="Typo.body2">@_review.Note</MudText>
-                }
+                @QualityRow("Tier 0 raw signal", "tier0", _signal.Tier0Quality, _tier0Review)
+                @QualityRow("Tier 1 classification", "tier1", _signal.Tier1Quality, _tier1Review)
+                @QualityRow("Tier 2 trade plan", "tier2", _signal.Tier2Quality, _tier2Review)
             </MudStack>
         </MudPaper>
 
@@ -61,7 +49,7 @@
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
                     <MudText Typo="Typo.overline">Source</MudText>
-                    <MudText>@_signal.Source</MudText>
+                    <MudText>@_signal.SourceDisplay</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
                     <MudText Typo="Typo.overline">Source Link</MudText>
@@ -113,8 +101,16 @@
                     <MudText>@FormatText(_signal.OutcomeStatus)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <MudText Typo="Typo.overline">Rating</MudText>
-                    <MudText>@FormatInt(_signal.Rating)</MudText>
+                    <MudText Typo="Typo.overline">Tier 0 Quality</MudText>
+                    <MudText>@FormatQuality(_signal.Tier0Quality)</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">Tier 1 Quality</MudText>
+                    <MudText>@FormatQuality(_signal.Tier1Quality)</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">Tier 2 Quality</MudText>
+                    <MudText>@FormatQuality(_signal.Tier2Quality)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
                     <MudText Typo="Typo.overline">Triggered</MudText>
@@ -165,29 +161,47 @@
     public int Id { get; set; }
 
     private SignalDetailDto? _signal;
-    private SignalReviewDto? _review;
+    private SignalReviewDto? _tier0Review;
+    private SignalReviewDto? _tier1Review;
+    private SignalReviewDto? _tier2Review;
     private bool _loading = true;
-
-    private string ReviewSummary => _review is null
-        ? "No dashboard review has been saved yet."
-        : $"{_review.Decision} | rating {_review.Rating?.ToString() ?? "-"} | {_review.Reviewer ?? "admin"} | {FormatDate(_review.UpdatedAt)}";
 
     protected override async Task OnParametersSetAsync()
     {
         _loading = true;
         _signal = await SignalQueryService.GetDetailAsync(Id);
-        _review = await SignalReviewService.GetLatestReviewAsync(Id);
+        _tier0Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier0");
+        _tier1Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier1");
+        _tier2Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier2");
         _loading = false;
     }
 
-    private async Task OpenReviewDialog(string decision)
+    private RenderFragment QualityRow(string label, string stage, string? quality, SignalReviewDto? review) => @<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+        <div>
+            <MudText Typo="Typo.body1">@label: @FormatQuality(quality)</MudText>
+            <MudText Typo="Typo.caption" Class="placeholder-line">@FormatQualityMeta(review)</MudText>
+        </div>
+        <MudStack Row="true" Spacing="1">
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.ThumbUp" OnClick="@(() => OpenReviewDialog(stage, "good", review))">
+                Good
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Remove" OnClick="@(() => OpenReviewDialog(stage, "medium", review))">
+                Medium
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.ThumbDown" OnClick="@(() => OpenReviewDialog(stage, "bad", review))">
+                Bad
+            </MudButton>
+        </MudStack>
+    </MudStack>;
+
+    private async Task OpenReviewDialog(string stage, string decision, SignalReviewDto? currentReview)
     {
         var parameters = new DialogParameters<SignalReviewDialog>
         {
             { dialog => dialog.SignalId, Id },
+            { dialog => dialog.Stage, stage },
             { dialog => dialog.Decision, decision },
-            { dialog => dialog.CurrentRating, _review?.Rating ?? _signal?.Rating },
-            { dialog => dialog.CurrentNote, _review?.Note }
+            { dialog => dialog.CurrentNote, currentReview?.Note }
         };
 
         var options = new DialogOptions
@@ -197,7 +211,7 @@
             FullWidth = true
         };
 
-        var dialog = await DialogService.ShowAsync<SignalReviewDialog>($"Review signal {Id}", parameters, options);
+        var dialog = await DialogService.ShowAsync<SignalReviewDialog>($"Rate {FormatStage(stage)} for signal {Id}", parameters, options);
         var result = await dialog.Result;
 
         if (result is null || result.Canceled || result.Data is not SignalReviewRequest request)
@@ -215,8 +229,11 @@
             return;
         }
 
-        _review = await SignalReviewService.GetLatestReviewAsync(Id);
-        Snackbar.Add($"Signal {Id} review saved.", Severity.Success);
+        _tier0Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier0");
+        _tier1Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier1");
+        _tier2Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier2");
+        _signal = await SignalQueryService.GetDetailAsync(Id);
+        Snackbar.Add($"Signal {Id} {FormatStage(request.Stage)} quality saved.", Severity.Success);
     }
 
     private static string FormatDate(DateTime? value)
@@ -232,6 +249,35 @@
     private static string FormatText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    private static string FormatQuality(string? value)
+    {
+        return value switch
+        {
+            "good" => "Good",
+            "medium" => "Medium",
+            "bad" => "Bad",
+            _ => "-"
+        };
+    }
+
+    private static string FormatQualityMeta(SignalReviewDto? review)
+    {
+        return review is null
+            ? "No label saved."
+            : $"{review.Reviewer ?? "admin"} | {FormatDate(review.UpdatedAt)}";
+    }
+
+    private static string FormatStage(string? stage)
+    {
+        return stage switch
+        {
+            "tier0" => "Tier 0",
+            "tier1" => "Tier 1",
+            "tier2" => "Tier 2",
+            _ => "signal"
+        };
     }
 
     private static string FormatTier1Pass(int? value)

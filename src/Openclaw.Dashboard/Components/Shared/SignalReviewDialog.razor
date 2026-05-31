@@ -4,21 +4,13 @@
     <DialogContent>
         <MudStack Spacing="3">
             <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
-                Admin confirmation is required. This writes a review and audit record to dashboard.db.
+                Admin confirmation is required. This writes @StageLabel quality to signals.db and an audit record to dashboard.db.
             </MudAlert>
 
-            <MudSelect T="string" Label="Decision" @bind-Value="_decision" Required="true">
-                <MudSelectItem Value="@("approve")">Approve</MudSelectItem>
-                <MudSelectItem Value="@("reject")">Reject</MudSelectItem>
-                <MudSelectItem Value="@("watch")">Watch</MudSelectItem>
-            </MudSelect>
-
-            <MudSelect T="int?" Label="Rating" @bind-Value="_rating" Required="true">
-                <MudSelectItem T="int?" Value="1">1</MudSelectItem>
-                <MudSelectItem T="int?" Value="2">2</MudSelectItem>
-                <MudSelectItem T="int?" Value="3">3</MudSelectItem>
-                <MudSelectItem T="int?" Value="4">4</MudSelectItem>
-                <MudSelectItem T="int?" Value="5">5</MudSelectItem>
+            <MudSelect T="string" Label="@($"{StageLabel} Quality")" @bind-Value="_decision" Required="true">
+                <MudSelectItem Value="@("good")">Good</MudSelectItem>
+                <MudSelectItem Value="@("medium")">Medium / Neutral</MudSelectItem>
+                <MudSelectItem Value="@("bad")">Bad</MudSelectItem>
             </MudSelect>
 
             <MudTextField T="string"
@@ -53,7 +45,7 @@
     <DialogActions>
         <MudButton OnClick="Cancel">Cancel</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!_confirmed)" OnClick="Submit">
-            Save Review
+            Save Quality
         </MudButton>
     </DialogActions>
 </MudDialog>
@@ -66,26 +58,32 @@
     public int SignalId { get; set; }
 
     [Parameter]
-    public string Decision { get; set; } = "watch";
+    public string Stage { get; set; } = "tier0";
 
     [Parameter]
-    public int? CurrentRating { get; set; }
+    public string Decision { get; set; } = "medium";
 
     [Parameter]
     public string? CurrentNote { get; set; }
 
-    private string _decision = "watch";
-    private int? _rating;
+    private string _decision = "medium";
     private string? _note;
     private string _reviewer = "admin";
     private string? _adminToken;
     private bool _confirmed;
     private string? _error;
+    private string StageLabel => Stage switch
+    {
+        "tier0" => "Tier 0 raw signal",
+        "tier1" => "Tier 1 classification",
+        "tier2" => "Tier 2 trade plan",
+        _ => "Signal"
+    };
 
     protected override void OnInitialized()
     {
-        _decision = string.IsNullOrWhiteSpace(Decision) ? "watch" : Decision;
-        _rating = CurrentRating;
+        Stage = Stage is "tier0" or "tier1" or "tier2" ? Stage : "tier0";
+        _decision = string.IsNullOrWhiteSpace(Decision) ? "medium" : Decision;
         _note = CurrentNote;
     }
 
@@ -97,9 +95,9 @@
             return;
         }
 
-        if (_rating is null or < 1 or > 5)
+        if (_decision is not ("good" or "medium" or "bad"))
         {
-            _error = "Choose a rating from 1 to 5.";
+            _error = "Choose good, medium, or bad.";
             return;
         }
 
@@ -111,8 +109,8 @@
 
         var request = new SignalReviewRequest(
             SignalId,
+            Stage,
             _decision,
-            _rating.Value,
             _note,
             _reviewer,
             _adminToken);
