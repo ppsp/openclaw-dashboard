@@ -7,6 +7,7 @@ namespace Openclaw.Dashboard.Services;
 
 public sealed class PortfolioTrackingService(
     IDbContextFactory<PortfolioDbContext> portfolioDbFactory,
+    MarketPriceService marketPriceService,
     ILogger<PortfolioTrackingService> logger)
 {
     private static readonly PortfolioAccountDefinition[] Accounts =
@@ -34,7 +35,11 @@ public sealed class PortfolioTrackingService(
                 .Take(500)
                 .ToListAsync(cancellationToken);
 
-            return BuildDashboard(holdings, transactions);
+            var quotes = await marketPriceService.GetCachedPricesAsync(
+                holdings.Select(holding => holding.Ticker),
+                cancellationToken);
+
+            return BuildDashboard(holdings, transactions, quotes);
         }
         catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
         {
@@ -45,11 +50,12 @@ public sealed class PortfolioTrackingService(
 
     private static PortfolioDashboard BuildDashboard(
         IReadOnlyList<LivePortfolioHolding> holdings,
-        IReadOnlyList<PortfolioTransaction> transactions)
+        IReadOnlyList<PortfolioTransaction> transactions,
+        IReadOnlyDictionary<string, MarketPriceQuote> quotes)
     {
         var holdingRows = holdings
             .Where(holding => !string.IsNullOrWhiteSpace(holding.Ticker))
-            .Select(ToHoldingRow)
+            .Select(holding => ToHoldingRow(holding, quotes))
             .OrderBy(row => AccountSort(row.AccountId))
             .ThenBy(row => row.Ticker)
             .ToList();
@@ -94,6 +100,20 @@ public sealed class PortfolioTrackingService(
             .Select(row => row.LastUpdate)
             .Where(date => date.HasValue)
             .Max();
+        var latestPriceFetchedAt = holdingRows
+            .Select(row => row.CurrentPriceFetchedAt)
+            .Where(date => date.HasValue)
+            .Max();
+        var totalCurrentCurrency = SingleCurrency(holdingRows);
+        var totalCurrentValue = totalCurrentCurrency is null
+            ? null
+            : SumPositiveOrNull(holdingRows.Select(row => row.CurrentValue));
+        var totalUnrealizedPnl = totalCurrentCurrency is null
+            ? null
+            : SumOrNull(holdingRows.Select(row => row.UnrealizedPnl));
+        var totalBookValueForPnl = totalCurrentCurrency is null
+            ? null
+            : SumPositiveOrNull(holdingRows.Where(row => row.UnrealizedPnl is not null).Select(row => row.BookValue));
 
         return new PortfolioDashboard(
             accountSummaries,
@@ -103,7 +123,12 @@ public sealed class PortfolioTrackingService(
             accountAllocation,
             holdingAllocation,
             monthlyActivity,
-            latestUpdate);
+            latestUpdate,
+            totalCurrentValue,
+            totalUnrealizedPnl,
+            totalUnrealizedPnl is not null && totalBookValueForPnl is > 0m ? totalUnrealizedPnl / totalBookValueForPnl * 100m : null,
+            totalCurrentCurrency,
+            latestPriceFetchedAt);
     }
 
     private static PortfolioAccountSummary BuildAccountSummary(
@@ -117,6 +142,16 @@ public sealed class PortfolioTrackingService(
         var cashLikeValue = accountRows
             .Where(row => row.IsCashLike)
             .Sum(row => row.BookValue ?? 0m);
+        var currentCurrency = SingleCurrency(accountRows);
+        var currentValue = currentCurrency is null
+            ? null
+            : SumPositiveOrNull(accountRows.Select(row => row.CurrentValue));
+        var unrealizedPnl = currentCurrency is null
+            ? null
+            : SumOrNull(accountRows.Select(row => row.UnrealizedPnl));
+        var bookValueForPnl = currentCurrency is null
+            ? null
+            : SumPositiveOrNull(accountRows.Where(row => row.UnrealizedPnl is not null).Select(row => row.BookValue));
 
         return new PortfolioAccountSummary(
             account.AccountId,
@@ -126,16 +161,27 @@ public sealed class PortfolioTrackingService(
             accountRows.Count(row => row.MissingCostBasis),
             cashLikeValue > 0m ? cashLikeValue : null,
             bookValue > 0m && cashLikeValue > 0m ? cashLikeValue / bookValue * 100m : null,
+            currentValue,
+            unrealizedPnl,
+            unrealizedPnl is not null && bookValueForPnl is > 0m ? unrealizedPnl / bookValueForPnl * 100m : null,
+            currentCurrency,
             accountRows
                 .Select(row => row.LastUpdate)
+                .Where(date => date.HasValue)
+                .Max(),
+            accountRows
+                .Select(row => row.CurrentPriceFetchedAt)
                 .Where(date => date.HasValue)
                 .Max(),
             accountRows.Count > 0);
     }
 
-    private static PortfolioHoldingRow ToHoldingRow(LivePortfolioHolding holding)
+    private static PortfolioHoldingRow ToHoldingRow(
+        LivePortfolioHolding holding,
+        IReadOnlyDictionary<string, MarketPriceQuote> quotes)
     {
         var accountId = NormalizeAccountId(holding.AccountId);
+        var ticker = MarketPriceService.NormalizeSymbol(holding.Ticker);
         var avgPriceCad = PositiveOrNull(holding.AvgPriceCad);
         var avgPriceUsd = PositiveOrNull(holding.AvgPriceUsd);
         decimal? bookValue = avgPriceCad is not null
@@ -143,11 +189,23 @@ public sealed class PortfolioTrackingService(
             : avgPriceUsd is not null
                 ? avgPriceUsd.Value * holding.NetAmount
                 : null;
+        quotes.TryGetValue(ticker, out var quote);
+        var currentPrice = PositiveOrNull(quote?.Price);
+        decimal? currentValue = currentPrice is null ? null : currentPrice.Value * holding.NetAmount;
+        var basisCurrency = avgPriceCad is not null ? "CAD" : avgPriceUsd is not null ? "USD" : null;
+        var quoteCurrency = string.IsNullOrWhiteSpace(quote?.Currency) ? null : quote.Currency;
+        decimal? unrealizedPnl = currentValue is not null &&
+                                 bookValue is not null &&
+                                 quoteCurrency is not null &&
+                                 basisCurrency is not null &&
+                                 quoteCurrency.Equals(basisCurrency, StringComparison.OrdinalIgnoreCase)
+            ? currentValue - bookValue
+            : null;
 
         return new PortfolioHoldingRow(
             accountId,
             FormatAccountName(accountId),
-            holding.Ticker.Trim().ToUpperInvariant(),
+            ticker,
             holding.NetAmount,
             avgPriceCad,
             avgPriceUsd,
@@ -157,8 +215,14 @@ public sealed class PortfolioTrackingService(
             ParseDate(holding.LastUpdate),
             bookValue is null && holding.NetAmount != 0m,
             IsCashLike(holding.Ticker),
-            null,
-            null);
+            currentPrice,
+            quoteCurrency,
+            quote?.FetchedAtUtc,
+            quote?.Provider,
+            quote?.LastError,
+            currentValue,
+            unrealizedPnl,
+            unrealizedPnl is not null && bookValue is > 0m ? unrealizedPnl / bookValue * 100m : null);
     }
 
     private static PortfolioTransactionRow ToTransactionRow(PortfolioTransaction transaction)
@@ -220,6 +284,16 @@ public sealed class PortfolioTrackingService(
                 "risk",
                 "Concentrated holding",
                 $"{row.AccountWeightPct:0.0}% of {row.AccountName} book value.",
+                row.AccountName,
+                row.Ticker)));
+
+        items.AddRange(holdings
+            .Where(row => !string.IsNullOrWhiteSpace(row.CurrentPriceError))
+            .Take(8)
+            .Select(row => new PortfolioWatchItem(
+                "warning",
+                "Price refresh failed",
+                row.CurrentPriceError!,
                 row.AccountName,
                 row.Ticker)));
 
@@ -286,10 +360,34 @@ public sealed class PortfolioTrackingService(
     private static PortfolioDashboard EmptyDashboard()
     {
         var accounts = Accounts
-            .Select(account => new PortfolioAccountSummary(account.AccountId, account.AccountName, 0, null, 0, null, null, null, false))
+            .Select(account => new PortfolioAccountSummary(account.AccountId, account.AccountName, 0, null, 0, null, null, null, null, null, null, null, null, false))
             .ToList();
 
-        return new PortfolioDashboard(accounts, [], [], [], [], [], [], null);
+        return new PortfolioDashboard(accounts, [], [], [], [], [], [], null, null, null, null, null, null);
+    }
+
+    private static string? SingleCurrency(IReadOnlyList<PortfolioHoldingRow> rows)
+    {
+        var currencies = rows
+            .Where(row => row.CurrentValue is not null && !string.IsNullOrWhiteSpace(row.CurrentPriceCurrency))
+            .Select(row => row.CurrentPriceCurrency!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToList();
+
+        return currencies.Count == 1 ? currencies[0] : null;
+    }
+
+    private static decimal? SumPositiveOrNull(IEnumerable<decimal?> values)
+    {
+        var total = values.Sum(value => value ?? 0m);
+        return total > 0m ? total : null;
+    }
+
+    private static decimal? SumOrNull(IEnumerable<decimal?> values)
+    {
+        var known = values.Where(value => value.HasValue).Select(value => value!.Value).ToList();
+        return known.Count == 0 ? null : known.Sum();
     }
 
     private static decimal? PositiveOrNull(decimal? value)

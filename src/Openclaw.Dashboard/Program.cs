@@ -40,6 +40,8 @@ builder.Services.Configure<DashboardAuthOptions>(
     builder.Configuration.GetSection(DashboardAuthOptions.SectionName));
 builder.Services.Configure<DashboardTimeOptions>(
     builder.Configuration.GetSection(DashboardTimeOptions.SectionName));
+builder.Services.Configure<MarketPriceOptions>(
+    builder.Configuration.GetSection(MarketPriceOptions.SectionName));
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -106,12 +108,14 @@ builder.Services.AddScoped<SignalQueryService>();
 builder.Services.AddScoped<SignalReviewService>();
 builder.Services.AddScoped<PaperTradeQueryService>();
 builder.Services.AddScoped<PortfolioTrackingService>();
+builder.Services.AddScoped<MarketPriceService>();
 builder.Services.AddScoped<AppSettingsService>();
 builder.Services.AddScoped<AdminWriteGuard>();
 builder.Services.AddScoped<CreatorSourceService>();
 builder.Services.AddScoped<TickerWatchlistService>();
 builder.Services.AddSingleton<DashboardPasswordHasher>();
 builder.Services.AddSingleton<DashboardTimeService>();
+builder.Services.AddHttpClient("MarketPrices");
 
 var app = builder.Build();
 
@@ -128,6 +132,9 @@ using (var scope = app.Services.CreateScope())
             .EnsureSchemaAsync();
         await scope.ServiceProvider
             .GetRequiredService<TickerWatchlistService>()
+            .EnsureSchemaAsync();
+        await scope.ServiceProvider
+            .GetRequiredService<MarketPriceService>()
             .EnsureSchemaAsync();
     }
     catch (Exception ex) when (ex is SqliteException or InvalidOperationException or IOException)

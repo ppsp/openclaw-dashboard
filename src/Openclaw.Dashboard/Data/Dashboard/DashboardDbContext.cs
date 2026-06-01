@@ -21,6 +21,8 @@ public sealed class DashboardDbContext(DbContextOptions<DashboardDbContext> opti
 
     public DbSet<TickerWatchlistItem> TickerWatchlistItems => Set<TickerWatchlistItem>();
 
+    public DbSet<MarketPriceCache> MarketPriceCaches => Set<MarketPriceCache>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AppSetting>(entity =>
@@ -107,6 +109,17 @@ public sealed class DashboardDbContext(DbContextOptions<DashboardDbContext> opti
             entity.Property(item => item.Status).HasMaxLength(40);
             entity.Property(item => item.TimeHorizon).HasMaxLength(120);
             entity.Property(item => item.Notes).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<MarketPriceCache>(entity =>
+        {
+            entity.ToTable("market_price_cache");
+            entity.HasKey(price => new { price.Symbol, price.Provider });
+            entity.HasIndex(price => price.FetchedAtUtc);
+            entity.Property(price => price.Symbol).HasMaxLength(32);
+            entity.Property(price => price.Provider).HasMaxLength(40);
+            entity.Property(price => price.Currency).HasMaxLength(16);
+            entity.Property(price => price.LastError).HasColumnType("TEXT");
         });
     }
 }

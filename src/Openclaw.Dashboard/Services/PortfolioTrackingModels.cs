@@ -8,7 +8,12 @@ public sealed record PortfolioDashboard(
     IReadOnlyList<PortfolioChartPoint> AccountAllocation,
     IReadOnlyList<PortfolioChartPoint> HoldingAllocation,
     IReadOnlyList<PortfolioMonthlyActivity> MonthlyActivity,
-    DateTime? LatestUpdate);
+    DateTime? LatestUpdate,
+    decimal? TotalCurrentValue,
+    decimal? TotalUnrealizedPnl,
+    decimal? TotalUnrealizedPnlPct,
+    string? TotalCurrentValueCurrency,
+    DateTime? LatestPriceFetchedAt);
 
 public sealed record PortfolioAccountSummary(
     string AccountId,
@@ -18,7 +23,12 @@ public sealed record PortfolioAccountSummary(
     int UnknownValueHoldings,
     decimal? CashLikeValue,
     decimal? CashLikePct,
+    decimal? CurrentValue,
+    decimal? UnrealizedPnl,
+    decimal? UnrealizedPnlPct,
+    string? CurrentValueCurrency,
     DateTime? LatestUpdate,
+    DateTime? LatestPriceFetchedAt,
     bool HasData);
 
 public sealed record PortfolioHoldingRow(
@@ -34,8 +44,14 @@ public sealed record PortfolioHoldingRow(
     DateTime? LastUpdate,
     bool MissingCostBasis,
     bool IsCashLike,
+    decimal? CurrentPrice,
+    string? CurrentPriceCurrency,
+    DateTime? CurrentPriceFetchedAt,
+    string? CurrentPriceProvider,
+    string? CurrentPriceError,
     decimal? CurrentValue,
-    decimal? UnrealizedPnl);
+    decimal? UnrealizedPnl,
+    decimal? UnrealizedPnlPct);
 
 public sealed record PortfolioTransactionRow(
     int Id,
