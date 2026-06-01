@@ -60,6 +60,48 @@ public sealed class PaperTradeQueryService(
         }
     }
 
+    public async Task<PagedResult<PaperTradeHistoryRow>> SearchHistoryAsync(
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(0, page);
+        pageSize = Math.Clamp(pageSize, 5, 100);
+
+        try
+        {
+            await using var db = await portfolioDbFactory.CreateDbContextAsync(cancellationToken);
+            var query =
+                from checkup in db.TradeCheckups.AsNoTracking()
+                join trade in db.PaperTrades.AsNoTracking() on checkup.TradeId equals trade.Id into tradeGroup
+                from trade in tradeGroup.DefaultIfEmpty()
+                select new
+                {
+                    Checkup = checkup,
+                    Ticker = trade == null ? string.Empty : trade.Symbol,
+                    Portfolio = trade == null ? string.Empty : trade.Portfolio,
+                    Status = trade == null ? string.Empty : trade.Status
+                };
+
+            var totalItems = await query.CountAsync(cancellationToken);
+            var history = await query
+                .OrderByDescending(row => row.Checkup.CheckupDate)
+                .ThenByDescending(row => row.Checkup.Id)
+                .Skip(page * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
+
+            return new PagedResult<PaperTradeHistoryRow>(
+                history.Select(row => ToHistoryRow(row.Checkup, row.Ticker, row.Portfolio, row.Status)).ToList(),
+                totalItems);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            logger.LogWarning(ex, "Paper trade history search failed.");
+            return new PagedResult<PaperTradeHistoryRow>([], 0);
+        }
+    }
+
     private static IReadOnlyList<PaperTradeSummary> BuildSummaries(IReadOnlyList<PaperTrade> trades)
     {
         var knownPortfolios = new[] { "manual", "auto" };
@@ -128,6 +170,29 @@ public sealed class PaperTradeQueryService(
             trade.SignalId,
             trade.EntryType,
             trade.EntryDate);
+    }
+
+    private static PaperTradeHistoryRow ToHistoryRow(
+        TradeCheckup checkup,
+        string? ticker,
+        string? portfolio,
+        string? status)
+    {
+        return new PaperTradeHistoryRow(
+            checkup.Id,
+            checkup.TradeId,
+            string.IsNullOrWhiteSpace(ticker) ? "-" : ticker,
+            string.IsNullOrWhiteSpace(portfolio) ? "-" : FormatPortfolio(portfolio.Trim().ToLowerInvariant()),
+            string.IsNullOrWhiteSpace(status) ? "open" : status,
+            checkup.CheckupDate,
+            checkup.CurrentPrice,
+            checkup.UnrealizedPnl,
+            checkup.PnlPct,
+            checkup.DaysHeld,
+            checkup.ThesisStillValid,
+            checkup.ConfidenceCurrent,
+            checkup.Recommendation,
+            checkup.Notes);
     }
 
     private static decimal? CalculatePnlPct(PaperTrade trade)

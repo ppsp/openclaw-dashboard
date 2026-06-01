@@ -129,6 +129,61 @@
             <MudTablePager PageSizeOptions="new[] { 10, 25, 50, 100 }" />
         </PagerContent>
     </MudTable>
+
+    <MudTable T="PaperTradeHistoryRow"
+              ServerData="LoadHistory"
+              Dense="true"
+              Hover="true"
+              Elevation="1"
+              RowsPerPage="25">
+        <ToolBarContent>
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.h6">History</MudText>
+                <MudText Typo="Typo.body2" Class="placeholder-line">Latest checkups from portfolio.db trade_checkups.</MudText>
+            </MudStack>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Date</MudTh>
+            <MudTh>Ticker</MudTh>
+            <MudTh>Portfolio</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Price</MudTh>
+            <MudTh>Unrealized P/L</MudTh>
+            <MudTh>P/L %</MudTh>
+            <MudTh>Days</MudTh>
+            <MudTh>Thesis</MudTh>
+            <MudTh>Confidence</MudTh>
+            <MudTh>Recommendation</MudTh>
+            <MudTh>Notes</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Date">@FormatText(context.CheckupDate)</MudTd>
+            <MudTd DataLabel="Ticker">@context.Ticker</MudTd>
+            <MudTd DataLabel="Portfolio">@context.Portfolio</MudTd>
+            <MudTd DataLabel="Status">@FormatText(context.Status)</MudTd>
+            <MudTd DataLabel="Price">@FormatMoney(context.CurrentPrice)</MudTd>
+            <MudTd DataLabel="Unrealized P/L">
+                <MudText Color="@PnlColor(context.UnrealizedPnl)">@FormatMoney(context.UnrealizedPnl)</MudText>
+            </MudTd>
+            <MudTd DataLabel="P/L %">
+                <MudText Color="@PnlColor(context.PnlPct)">@FormatPercent(context.PnlPct)</MudText>
+            </MudTd>
+            <MudTd DataLabel="Days">@FormatInt(context.DaysHeld)</MudTd>
+            <MudTd DataLabel="Thesis">@FormatThesis(context.ThesisStillValid)</MudTd>
+            <MudTd DataLabel="Confidence">@FormatInt(context.ConfidenceCurrent)</MudTd>
+            <MudTd DataLabel="Recommendation">@FormatText(context.Recommendation)</MudTd>
+            <MudTd DataLabel="Notes">@FormatText(context.Notes)</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-4 placeholder-line">No paper trade checkup history found.</MudText>
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText Class="pa-4 placeholder-line">Loading paper trade history...</MudText>
+        </LoadingContent>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+        </PagerContent>
+    </MudTable>
 </MudStack>
 
 @code {
@@ -152,6 +207,20 @@
             cancellationToken);
 
         return new TableData<PaperTradeRow>
+        {
+            Items = result.Items,
+            TotalItems = result.TotalItems
+        };
+    }
+
+    private async Task<TableData<PaperTradeHistoryRow>> LoadHistory(TableState state, CancellationToken cancellationToken)
+    {
+        var result = await PaperTradeQueryService.SearchHistoryAsync(
+            state.Page,
+            state.PageSize,
+            cancellationToken);
+
+        return new TableData<PaperTradeHistoryRow>
         {
             Items = result.Items,
             TotalItems = result.TotalItems
@@ -188,6 +257,21 @@
     private static string FormatText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    private static string FormatInt(int? value)
+    {
+        return value?.ToString("#,##0") ?? "-";
+    }
+
+    private static string FormatThesis(int? value)
+    {
+        return value switch
+        {
+            1 => "Valid",
+            0 => "Invalid",
+            _ => "-"
+        };
     }
 
     private static Color PnlColor(decimal? value)
