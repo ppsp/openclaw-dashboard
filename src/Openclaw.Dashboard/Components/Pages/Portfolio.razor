@@ -1,0 +1,468 @@
+@page "/portfolio"
+@using Openclaw.Dashboard.Services
+@inject PortfolioTrackingService PortfolioTrackingService
+
+<MudStack Spacing="3">
+    <div class="page-title">
+        <MudText Typo="Typo.h4">Portfolio</MudText>
+        <MudText Typo="Typo.body1" Class="placeholder-line">
+            Read-only account tracking from portfolio.db.
+        </MudText>
+    </div>
+
+    @if (_loading)
+    {
+        <MudGrid>
+            @for (var index = 0; index < 3; index++)
+            {
+                <MudItem xs="12" md="4">
+                    <MudSkeleton Height="172px" Animation="Animation.Wave" />
+                </MudItem>
+            }
+        </MudGrid>
+        <MudSkeleton Height="320px" Animation="Animation.Wave" />
+    }
+    else if (_dashboard is not null)
+    {
+        <MudGrid>
+            @foreach (var account in _dashboard.Accounts)
+            {
+                <MudItem xs="12" md="4">
+                    <MudPaper Class="metric-card pa-4" Elevation="1">
+                        <MudStack Spacing="2">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.h6">@account.AccountName</MudText>
+                                    <MudText Typo="Typo.caption" Class="placeholder-line">@FormatDate(account.LatestUpdate)</MudText>
+                                </MudStack>
+                                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="@AccountColor(account)" />
+                            </MudStack>
+                            <MudGrid Spacing="2">
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.overline">Book Value</MudText>
+                                    <MudText Typo="Typo.h5">@FormatMoney(account.BookValue)</MudText>
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.overline">Holdings</MudText>
+                                    <MudText Typo="Typo.h5">@account.HoldingsCount</MudText>
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.overline">Cash-like</MudText>
+                                    <MudText Typo="Typo.h6">@FormatPercent(account.CashLikePct)</MudText>
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.overline">Unknown Cost</MudText>
+                                    <MudText Typo="Typo.h6" Color="@(account.UnknownValueHoldings > 0 ? Color.Warning : Color.Default)">
+                                        @account.UnknownValueHoldings
+                                    </MudText>
+                                </MudItem>
+                            </MudGrid>
+                            @if (!account.HasData)
+                            {
+                                <MudText Typo="Typo.body2" Class="placeholder-line">No holdings loaded for this account yet.</MudText>
+                            }
+                        </MudStack>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="4">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.overline">Total Book Value</MudText>
+                        <MudText Typo="Typo.h4">@FormatMoney(TotalBookValue)</MudText>
+                    </MudStack>
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudText Typo="Typo.overline">Holdings</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.Holdings.Count</MudText>
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudText Typo="Typo.overline">Transactions</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.Transactions.Count</MudText>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudText Typo="Typo.overline">Current Value</MudText>
+                    <MudText Typo="Typo.h6" Class="placeholder-line">Unavailable until quote data is wired</MudText>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.h6">Account View</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">Filter holdings, charts, and history by account.</MudText>
+                </MudStack>
+                <MudSelect T="string" Label="Account" Dense="true" @bind-Value="_selectedAccount" Style="min-width: 180px;">
+                    <MudSelectItem Value="@AllAccounts">All accounts</MudSelectItem>
+                    @foreach (var account in _dashboard.Accounts)
+                    {
+                        <MudSelectItem Value="@account.AccountId">@account.AccountName</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudStack>
+        </MudPaper>
+
+        <MudGrid>
+            <MudItem xs="12" lg="4">
+                <MudPaper Class="portfolio-chart pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Account Allocation</MudText>
+                    @if (FilteredAccountAllocation.Length > 0)
+                    {
+                        <MudChart T="double"
+                                  ChartType="ChartType.Pie"
+                                  ChartSeries="@FilteredAccountSeries"
+                                  ChartLabels="@FilteredAccountLabels"
+                                  Width="100%"
+                                  Height="260px" />
+                    }
+                    else
+                    {
+                        @EmptyChart("No account valuation data yet.")
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <MudPaper Class="portfolio-chart pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Top Holdings</MudText>
+                    @if (FilteredHoldingAllocation.Length > 0)
+                    {
+                        <MudChart T="double"
+                                  ChartType="ChartType.Pie"
+                                  ChartSeries="@FilteredHoldingSeries"
+                                  ChartLabels="@FilteredHoldingLabels"
+                                  Width="100%"
+                                  Height="260px" />
+                    }
+                    else
+                    {
+                        @EmptyChart("No valued holdings for this view.")
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <MudPaper Class="portfolio-chart pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Buys vs Sells</MudText>
+                    @if (MonthlyLabels.Length > 0)
+                    {
+                        <MudChart T="double"
+                                  ChartType="ChartType.Bar"
+                                  ChartSeries="@MonthlySeries"
+                                  ChartLabels="@MonthlyLabels"
+                                  Width="100%"
+                                  Height="260px" />
+                    }
+                    else
+                    {
+                        @EmptyChart("No transaction values for this view.")
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudGrid>
+            <MudItem xs="12" lg="8">
+                <MudTable T="PortfolioHoldingRow"
+                          Items="@FilteredHoldings"
+                          Dense="true"
+                          Hover="true"
+                          Elevation="1"
+                          RowsPerPage="25">
+                    <ToolBarContent>
+                        <MudText Typo="Typo.h6">Holdings</MudText>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>Ticker</MudTh>
+                        <MudTh>Account</MudTh>
+                        <MudTh>Quantity</MudTh>
+                        <MudTh>Avg CAD</MudTh>
+                        <MudTh>Avg USD</MudTh>
+                        <MudTh>Book Value</MudTh>
+                        <MudTh>Weight</MudTh>
+                        <MudTh>Last Update</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Ticker">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <span>@context.Ticker</span>
+                                @if (context.MissingCostBasis)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
+                                }
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Account">@context.AccountName</MudTd>
+                        <MudTd DataLabel="Quantity">@FormatQuantity(context.Quantity)</MudTd>
+                        <MudTd DataLabel="Avg CAD">@FormatMoney(context.AvgPriceCad)</MudTd>
+                        <MudTd DataLabel="Avg USD">@FormatMoney(context.AvgPriceUsd)</MudTd>
+                        <MudTd DataLabel="Book Value">
+                            @FormatMoney(context.BookValue)
+                            <MudText Typo="Typo.caption" Class="placeholder-line">@context.BookValueCurrency</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Weight">@FormatPercent(context.AccountWeightPct)</MudTd>
+                        <MudTd DataLabel="Last Update">@FormatDate(context.LastUpdate)</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText Class="pa-4 placeholder-line">No holdings in this view.</MudText>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <MudPaper Class="pa-4 portfolio-watch" Elevation="1">
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.h6">Watch Items</MudText>
+                        @if (FilteredWatchItems.Count == 0)
+                        {
+                            <MudText Class="placeholder-line">No watch items for this view.</MudText>
+                        }
+                        else
+                        {
+                            @foreach (var item in FilteredWatchItems)
+                            {
+                                <MudAlert Severity="@WatchSeverity(item.Severity)" Dense="true" Variant="Variant.Outlined">
+                                    <MudText Typo="Typo.subtitle2">@item.Title</MudText>
+                                    <MudText Typo="Typo.body2">@WatchContext(item) @item.Detail</MudText>
+                                </MudAlert>
+                            }
+                        }
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudTable T="PortfolioTransactionRow"
+                  Items="@FilteredTransactions"
+                  Dense="true"
+                  Hover="true"
+                  Elevation="1"
+                  RowsPerPage="25">
+            <ToolBarContent>
+                <MudText Typo="Typo.h6">History</MudText>
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh>Date</MudTh>
+                <MudTh>Ticker</MudTh>
+                <MudTh>Account</MudTh>
+                <MudTh>Activity</MudTh>
+                <MudTh>Amount</MudTh>
+                <MudTh>Price CAD</MudTh>
+                <MudTh>Price USD</MudTh>
+                <MudTh>Comment</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Date">@FormatDate(context.Date)</MudTd>
+                <MudTd DataLabel="Ticker">@context.Ticker</MudTd>
+                <MudTd DataLabel="Account">@context.AccountName</MudTd>
+                <MudTd DataLabel="Activity">@context.Activity</MudTd>
+                <MudTd DataLabel="Amount">@FormatQuantity(context.Amount)</MudTd>
+                <MudTd DataLabel="Price CAD">@FormatMoney(context.PriceCad)</MudTd>
+                <MudTd DataLabel="Price USD">@FormatMoney(context.PriceUsd)</MudTd>
+                <MudTd DataLabel="Comment">@FormatText(context.Comment)</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Class="pa-4 placeholder-line">No transaction history in this view.</MudText>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudStack>
+
+@code {
+    private const string AllAccounts = "all";
+
+    private PortfolioDashboard? _dashboard;
+    private bool _loading = true;
+    private string _selectedAccount = AllAccounts;
+
+    private decimal? TotalBookValue => SumOrNull(_dashboard?.Accounts.Select(account => account.BookValue));
+
+    private IReadOnlyList<PortfolioHoldingRow> FilteredHoldings =>
+        _dashboard?.Holdings
+            .Where(row => IsSelectedAccount(row.AccountId))
+            .ToList() ?? [];
+
+    private IReadOnlyList<PortfolioTransactionRow> FilteredTransactions =>
+        _dashboard?.Transactions
+            .Where(row => IsSelectedAccount(row.AccountId))
+            .ToList() ?? [];
+
+    private IReadOnlyList<PortfolioWatchItem> FilteredWatchItems =>
+        _dashboard?.WatchItems
+            .Where(item => _selectedAccount == AllAccounts ||
+                           item.AccountName is null ||
+                           item.AccountName.Equals(SelectedAccountName, StringComparison.OrdinalIgnoreCase))
+            .ToList() ?? [];
+
+    private double[] FilteredAccountAllocation => _selectedAccount == AllAccounts
+        ? ChartValues(_dashboard?.AccountAllocation)
+        : ChartValues(_dashboard?.AccountAllocation.Where(point => point.Label.Equals(SelectedAccountName, StringComparison.OrdinalIgnoreCase)));
+
+    private List<ChartSeries<double>> FilteredAccountSeries =>
+    [
+        new() { Name = "Book value", Data = FilteredAccountAllocation }
+    ];
+
+    private string[] FilteredAccountLabels => _selectedAccount == AllAccounts
+        ? ChartLabels(_dashboard?.AccountAllocation)
+        : ChartLabels(_dashboard?.AccountAllocation.Where(point => point.Label.Equals(SelectedAccountName, StringComparison.OrdinalIgnoreCase)));
+
+    private double[] FilteredHoldingAllocation => ChartValues(BuildFilteredHoldingAllocation());
+
+    private List<ChartSeries<double>> FilteredHoldingSeries =>
+    [
+        new() { Name = "Book value", Data = FilteredHoldingAllocation }
+    ];
+
+    private string[] FilteredHoldingLabels => ChartLabels(BuildFilteredHoldingAllocation());
+
+    private string[] MonthlyLabels => FilteredMonthlyActivity.Select(activity => activity.Month).ToArray();
+
+    private List<ChartSeries<double>> MonthlySeries =>
+    [
+        new() { Name = "Buys", Data = FilteredMonthlyActivity.Select(activity => activity.BuyValue).ToArray() },
+        new() { Name = "Sells", Data = FilteredMonthlyActivity.Select(activity => activity.SellValue).ToArray() }
+    ];
+
+    private IReadOnlyList<PortfolioMonthlyActivity> FilteredMonthlyActivity => BuildMonthlyActivity(FilteredTransactions);
+
+    private string SelectedAccountName => _dashboard?.Accounts
+        .FirstOrDefault(account => account.AccountId.Equals(_selectedAccount, StringComparison.OrdinalIgnoreCase))
+        ?.AccountName ?? string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dashboard = await PortfolioTrackingService.GetDashboardAsync();
+        _loading = false;
+    }
+
+    private bool IsSelectedAccount(string accountId)
+    {
+        return _selectedAccount == AllAccounts ||
+               accountId.Equals(_selectedAccount, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private IReadOnlyList<PortfolioChartPoint> BuildFilteredHoldingAllocation()
+    {
+        var valuedHoldings = FilteredHoldings
+            .Where(row => row.BookValue is > 0m)
+            .GroupBy(row => row.Ticker)
+            .Select(group => new PortfolioChartPoint(group.Key, decimal.ToDouble(group.Sum(row => row.BookValue ?? 0m))))
+            .OrderByDescending(point => point.Value)
+            .ToList();
+
+        var top = valuedHoldings.Take(8).ToList();
+        var otherValue = valuedHoldings.Skip(8).Sum(point => point.Value);
+        if (otherValue > 0d)
+        {
+            top.Add(new PortfolioChartPoint("Other", otherValue));
+        }
+
+        return top;
+    }
+
+    private static IReadOnlyList<PortfolioMonthlyActivity> BuildMonthlyActivity(IReadOnlyList<PortfolioTransactionRow> transactions)
+    {
+        return transactions
+            .Where(transaction => transaction.Date.HasValue)
+            .GroupBy(transaction => new DateTime(transaction.Date!.Value.Year, transaction.Date.Value.Month, 1))
+            .OrderBy(group => group.Key)
+            .Select(group => new PortfolioMonthlyActivity(
+                group.Key.ToString("MMM yyyy"),
+                decimal.ToDouble(group.Where(transaction => transaction.Amount > 0m).Sum(EstimatedTransactionValue)),
+                decimal.ToDouble(Math.Abs(group.Where(transaction => transaction.Amount < 0m).Sum(EstimatedTransactionValue)))))
+            .ToList();
+    }
+
+    private static decimal EstimatedTransactionValue(PortfolioTransactionRow transaction)
+    {
+        var price = transaction.PriceCad ?? transaction.PriceUsd;
+        return price is null ? 0m : transaction.Amount * price.Value;
+    }
+
+    private static double[] ChartValues(IEnumerable<PortfolioChartPoint>? points)
+    {
+        return points?.Where(point => point.Value > 0d).Select(point => point.Value).ToArray() ?? [];
+    }
+
+    private static string[] ChartLabels(IEnumerable<PortfolioChartPoint>? points)
+    {
+        return points?.Where(point => point.Value > 0d).Select(point => point.Label).ToArray() ?? [];
+    }
+
+    private static RenderFragment EmptyChart(string message) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "portfolio-empty-chart placeholder-line");
+        builder.AddContent(2, message);
+        builder.CloseElement();
+    };
+
+    private static decimal? SumOrNull(IEnumerable<decimal?>? values)
+    {
+        if (values is null)
+        {
+            return null;
+        }
+
+        var total = values.Sum(value => value ?? 0m);
+        return total > 0m ? total : null;
+    }
+
+    private static Color AccountColor(PortfolioAccountSummary account)
+    {
+        return account.HasData ? Color.Primary : Color.Default;
+    }
+
+    private static Severity WatchSeverity(string severity)
+    {
+        return severity switch
+        {
+            "risk" => Severity.Error,
+            "warning" => Severity.Warning,
+            _ => Severity.Info
+        };
+    }
+
+    private static string WatchContext(PortfolioWatchItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.Ticker) && !string.IsNullOrWhiteSpace(item.AccountName))
+        {
+            return $"{item.AccountName} / {item.Ticker}:";
+        }
+
+        return string.IsNullOrWhiteSpace(item.AccountName) ? string.Empty : $"{item.AccountName}:";
+    }
+
+    private static string FormatMoney(decimal? value)
+    {
+        return value?.ToString("$#,##0.00;-$#,##0.00") ?? "-";
+    }
+
+    private static string FormatPercent(decimal? value)
+    {
+        return value.HasValue ? $"{value.Value:0.0}%" : "-";
+    }
+
+    private static string FormatQuantity(decimal value)
+    {
+        return value.ToString("#,##0.####;-#,##0.####;0");
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value?.ToString("yyyy-MM-dd") ?? "-";
+    }
+
+    private static string FormatText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+}

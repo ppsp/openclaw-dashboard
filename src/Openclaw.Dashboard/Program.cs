@@ -105,6 +105,7 @@ builder.Services.AddScoped<CronHealthService>();
 builder.Services.AddScoped<SignalQueryService>();
 builder.Services.AddScoped<SignalReviewService>();
 builder.Services.AddScoped<PaperTradeQueryService>();
+builder.Services.AddScoped<PortfolioTrackingService>();
 builder.Services.AddScoped<AppSettingsService>();
 builder.Services.AddScoped<AdminWriteGuard>();
 builder.Services.AddScoped<CreatorSourceService>();
