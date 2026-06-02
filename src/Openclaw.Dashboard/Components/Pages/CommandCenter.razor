@@ -1,48 +1,206 @@
 @page "/"
 @page "/command-center"
 @using Openclaw.Dashboard.Services
+@inject CronHealthService CronHealthService
 @inject DashboardSummaryService SummaryService
+@inject PortfolioTrackingService PortfolioTrackingService
 
 <MudStack Spacing="3">
-    <div class="page-title">
+    <div class="page-title oc-page-header">
         <MudText Typo="Typo.h4">Command Center</MudText>
         <MudText Typo="Typo.body1" Class="placeholder-line">
-            Lightweight Mission Control summary from SQLite and cron state.
+            Priority inbox for broken jobs, stale data, and blocked workflow items.
         </MudText>
     </div>
 
     @if (_loading)
     {
-        <MudGrid>
-            @for (var index = 0; index < 6; index++)
-            {
-                <MudItem xs="12" sm="6" md="4" lg="2">
-                    <MudSkeleton Height="132px" Animation="Animation.Wave" />
-                </MudItem>
-            }
-        </MudGrid>
+        <MudSkeleton Height="420px" Animation="Animation.Wave" />
     }
     else
     {
         <MudGrid>
-            @foreach (var metric in _metrics)
-            {
-                <MudItem xs="12" sm="6" md="4" lg="2">
-                    <MudPaper Class="metric-card pa-4" Elevation="1">
-                        <MudStack Spacing="2">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                                <MudText Typo="Typo.overline">@metric.Label</MudText>
-                                <MudIcon Icon="@metric.Icon" Color="@metric.Color" />
-                            </MudStack>
-                            <MudText Typo="Typo.h4">@metric.Value</MudText>
-                            <MudText Typo="Typo.body2" Class="placeholder-line">@metric.Detail</MudText>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="metric-card oc-metric-card oc-metric-card-danger pa-4" Elevation="1">
+                    <MudStack Spacing="1">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.overline">Priority 1</MudText>
+                            <MudIcon Icon="@Icons.Material.Filled.ReportProblem" Color="@(_brokenCrons.Count == 0 ? Color.Success : Color.Error)" />
                         </MudStack>
-                    </MudPaper>
-                </MudItem>
-            }
+                        <MudText Typo="Typo.h4">@_brokenCrons.Count</MudText>
+                        <MudText Typo="Typo.body2" Class="placeholder-line">Broken crons requiring attention</MudText>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="metric-card oc-metric-card oc-metric-card-warning pa-4" Elevation="1">
+                    <MudStack Spacing="1">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.overline">Priority 2</MudText>
+                            <MudIcon Icon="@Icons.Material.Filled.TimerOff" Color="@(_priorityTwo.Count == 0 ? Color.Success : Color.Warning)" />
+                        </MudStack>
+                        <MudText Typo="Typo.h4">@_priorityTwo.Count</MudText>
+                        <MudText Typo="Typo.body2" Class="placeholder-line">Stale data or failing imports</MudText>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="metric-card oc-metric-card oc-metric-card-workflow pa-4" Elevation="1">
+                    <MudStack Spacing="1">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.overline">Workflow</MudText>
+                            <MudIcon Icon="@Icons.Material.Filled.PendingActions" Color="@(_priorityThree.Count == 0 ? Color.Success : Color.Info)" />
+                        </MudStack>
+                        <MudText Typo="Typo.h4">@_priorityThree.Count</MudText>
+                        <MudText Typo="Typo.body2" Class="placeholder-line">Late signal or trade review items</MudText>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
         </MudGrid>
 
-        <MudPaper Class="pa-4" Elevation="1">
+        <MudPaper Class="oc-panel oc-panel-danger pa-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.h6">Priority 1: Broken Crons</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">Failed, errored, or unknown jobs are shown first.</MudText>
+                </MudStack>
+                <MudButton Href="/cron-health" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.MonitorHeart">
+                    Cron Health
+                </MudButton>
+            </MudStack>
+
+            @if (_brokenCrons.Count == 0)
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-3">
+                    No broken crons detected.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_brokenCrons" Dense="true" Hover="true" Elevation="0" Class="oc-table mt-3">
+                    <HeaderContent>
+                        <MudTh>Job</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Last Run</MudTh>
+                        <MudTh>Next Run</MudTh>
+                        <MudTh>Age</MudTh>
+                        <MudTh>Error</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Job">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@context.Name</MudText>
+                                <MudText Typo="Typo.caption" Class="placeholder-line">@context.Schedule</MudText>
+                                <MudText Typo="Typo.caption" Class="placeholder-line">@context.Source</MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Color="@StatusColor(context.Status)" Variant="Variant.Outlined" Size="Size.Small">
+                                @context.Status
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Last Run">@FormatDate(context.LastRun)</MudTd>
+                        <MudTd DataLabel="Next Run">@FormatDate(context.NextRun)</MudTd>
+                        <MudTd DataLabel="Age">@FormatAge(context.LastRun)</MudTd>
+                        <MudTd DataLabel="Error">
+                            <MudText Typo="Typo.body2" Class="placeholder-line">@FormatError(context.Error)</MudText>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudGrid>
+            <MudItem xs="12" lg="7">
+                <MudPaper Class="oc-panel oc-panel-warning pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Priority 2: System Freshness</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">Things that make dashboard data stale or incomplete.</MudText>
+                    <MudDivider Class="my-3" />
+                    @if (_priorityTwo.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">No freshness warnings detected.</MudAlert>
+                    }
+                    else
+                    {
+                        <MudStack Spacing="2">
+                            @foreach (var issue in _priorityTwo)
+                            {
+                                @IssueRow(issue)
+                            }
+                        </MudStack>
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="5">
+                <MudPaper Class="oc-panel pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Data Freshness</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">Latest timestamps that tell us whether the system is alive.</MudText>
+                    <MudDivider Class="my-3" />
+                    <MudStack Spacing="2">
+                        @foreach (var item in _freshness)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.body2">@item.Label</MudText>
+                                    <MudText Typo="Typo.caption" Class="placeholder-line">@item.Detail</MudText>
+                                </MudStack>
+                                <MudChip T="string" Color="@item.Color" Variant="Variant.Outlined" Size="Size.Small">
+                                    @item.Value
+                                </MudChip>
+                            </MudStack>
+                        }
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudGrid>
+            <MudItem xs="12" lg="6">
+                <MudPaper Class="oc-panel oc-panel-workflow pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Priority 3: Workflow Exceptions</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">Signal and trade queues that are waiting longer than they should.</MudText>
+                    <MudDivider Class="my-3" />
+                    @if (_priorityThree.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">No workflow exceptions detected.</MudAlert>
+                    }
+                    else
+                    {
+                        <MudStack Spacing="2">
+                            @foreach (var issue in _priorityThree)
+                            {
+                                @IssueRow(issue)
+                            }
+                        </MudStack>
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="6">
+                <MudPaper Class="oc-panel pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Recent Cron Activity</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">Last known jobs by most recent run time.</MudText>
+                    <MudDivider Class="my-3" />
+                    <MudTable Items="_recentCrons" Dense="true" Hover="true" Elevation="0" Class="oc-table">
+                        <HeaderContent>
+                            <MudTh>Job</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Last Run</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Job">@context.Name</MudTd>
+                            <MudTd DataLabel="Status">
+                                <MudChip T="string" Color="@StatusColor(context.Status)" Variant="Variant.Outlined" Size="Size.Small">
+                                    @context.Status
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Last Run">@FormatDate(context.LastRun)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudPaper Class="oc-panel pa-4" Elevation="1">
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
                 <MudStack Spacing="0">
                     <MudText Typo="Typo.h6">Summary source</MudText>
@@ -66,21 +224,40 @@
     private string? _error;
     private string _summarySource = "Not loaded";
     private string _asOfText = string.Empty;
-    private IReadOnlyList<CommandCenterMetric> _metrics = [];
+    private IReadOnlyList<CronHealthJobRow> _brokenCrons = [];
+    private IReadOnlyList<CronHealthJobRow> _recentCrons = [];
+    private IReadOnlyList<CommandCenterIssue> _priorityTwo = [];
+    private IReadOnlyList<CommandCenterIssue> _priorityThree = [];
+    private IReadOnlyList<FreshnessItem> _freshness = [];
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             var summary = await SummaryService.GetCommandCenterSummaryAsync();
-            _metrics = summary.ToMetrics();
+            var cronJobs = await CronHealthService.GetJobsAsync();
+            var portfolio = await PortfolioTrackingService.GetDashboardAsync();
+
             _summarySource = summary.Source;
             _asOfText = $"As of {summary.AsOf:g}";
+            _brokenCrons = cronJobs
+                .Where(IsBrokenCron)
+                .OrderByDescending(row => StatusRank(row.Status))
+                .ThenBy(row => row.LastRun ?? DateTime.MinValue)
+                .ThenBy(row => row.Name)
+                .ToList();
+            _recentCrons = cronJobs
+                .Where(row => row.LastRun is not null)
+                .OrderByDescending(row => row.LastRun)
+                .Take(8)
+                .ToList();
+            _priorityTwo = BuildPriorityTwo(cronJobs, portfolio);
+            _priorityThree = BuildPriorityThree(summary, portfolio);
+            _freshness = BuildFreshness(cronJobs, portfolio, summary);
         }
         catch (Exception ex)
         {
-            _error = $"Command Center summary could not be loaded: {ex.Message}";
-            _metrics = new CommandCenterSummary().ToMetrics();
+            _error = $"Command Center could not be loaded: {ex.Message}";
             _summarySource = "empty fallback";
             _asOfText = $"As of {DateTime.Now:g}";
         }
@@ -89,4 +266,215 @@
             _loading = false;
         }
     }
+
+    private RenderFragment IssueRow(CommandCenterIssue issue) => @<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.body2">@issue.Title</MudText>
+            <MudText Typo="Typo.caption" Class="placeholder-line">@issue.Detail</MudText>
+        </MudStack>
+        <MudChip T="string" Color="@issue.Color" Variant="Variant.Outlined" Size="Size.Small">
+            @issue.Value
+        </MudChip>
+    </MudStack>;
+
+    private static IReadOnlyList<CommandCenterIssue> BuildPriorityTwo(
+        IReadOnlyList<CronHealthJobRow> cronJobs,
+        PortfolioDashboard portfolio)
+    {
+        var issues = new List<CommandCenterIssue>();
+        var now = DateTime.Now;
+        var staleCrons = cronJobs
+            .Where(row => row.Enabled != false &&
+                          !IsBrokenCron(row) &&
+                          row.NextRun is not null &&
+                          row.NextRun.Value < now.AddMinutes(-10))
+            .Take(5)
+            .ToList();
+        var warningCrons = cronJobs
+            .Where(row => row.Status.Equals("warning", StringComparison.OrdinalIgnoreCase) ||
+                          row.Status.Equals("pending", StringComparison.OrdinalIgnoreCase))
+            .Take(5)
+            .ToList();
+        var staleHoldingRows = portfolio.Holdings.Count(row => row.LastUpdate is not null && row.LastUpdate.Value < DateTime.Today.AddDays(-45));
+        var failedPrices = portfolio.Holdings.Count(row => !string.IsNullOrWhiteSpace(row.CurrentPriceError));
+
+        issues.AddRange(staleCrons.Select(row => new CommandCenterIssue(
+            "Stale cron schedule",
+            $"{row.Name} missed its next run at {FormatDate(row.NextRun)}.",
+            FormatAge(row.NextRun),
+            Color.Warning)));
+        issues.AddRange(warningCrons.Select(row => new CommandCenterIssue(
+            "Cron needs review",
+            $"{row.Name}: {FormatError(row.Error)}",
+            row.Status,
+            Color.Warning)));
+
+        if (portfolio.LatestUpdate is null)
+        {
+            issues.Add(new CommandCenterIssue("Portfolio data missing", "No live portfolio update timestamp was found.", "missing", Color.Warning));
+        }
+        else if (portfolio.LatestUpdate.Value < DateTime.Today.AddDays(-2))
+        {
+            issues.Add(new CommandCenterIssue("Portfolio data stale", $"Latest holding update was {FormatDate(portfolio.LatestUpdate)}.", FormatAge(portfolio.LatestUpdate), Color.Warning));
+        }
+
+        if (portfolio.LatestPriceFetchedAt is null && portfolio.Holdings.Count > 0)
+        {
+            issues.Add(new CommandCenterIssue("Market prices missing", "Holdings exist but no cached quote timestamp was found.", "missing", Color.Warning));
+        }
+        else if (portfolio.LatestPriceFetchedAt is not null && portfolio.LatestPriceFetchedAt.Value < DateTime.Now.AddHours(-24))
+        {
+            issues.Add(new CommandCenterIssue("Market prices stale", $"Latest cached quote was {FormatDate(portfolio.LatestPriceFetchedAt)}.", FormatAge(portfolio.LatestPriceFetchedAt), Color.Warning));
+        }
+
+        if (staleHoldingRows > 0)
+        {
+            issues.Add(new CommandCenterIssue("Stale holding rows", "Portfolio rows older than 45 days need review.", staleHoldingRows.ToString(), Color.Warning));
+        }
+
+        if (failedPrices > 0)
+        {
+            issues.Add(new CommandCenterIssue("Price refresh failures", "One or more holdings have quote refresh errors.", failedPrices.ToString(), Color.Warning));
+        }
+
+        return issues;
+    }
+
+    private static IReadOnlyList<CommandCenterIssue> BuildPriorityThree(
+        CommandCenterSummary summary,
+        PortfolioDashboard portfolio)
+    {
+        var issues = new List<CommandCenterIssue>();
+
+        if (summary.StaleWatch > 0)
+        {
+            issues.Add(new CommandCenterIssue("Stale watch signals", "Watch signals are past discovered time plus TTL.", summary.StaleWatch.ToString(), Color.Warning));
+        }
+
+        if (summary.PassPendingTier2 > 0)
+        {
+            issues.Add(new CommandCenterIssue("Pass pending Tier 2", "Signals passed Tier 1 and still need Tier 2 trade engineering.", summary.PassPendingTier2.ToString(), Color.Info));
+        }
+
+        if (summary.FastTrackPendingTier2 > 0)
+        {
+            issues.Add(new CommandCenterIssue("Fast-track pending Tier 2", "Fast-track signals are still waiting on risk checks.", summary.FastTrackPendingTier2.ToString(), Color.Warning));
+        }
+
+        if (summary.NewUnrouted > 0)
+        {
+            issues.Add(new CommandCenterIssue("New unrouted signals", "New signals have not received an authoritative Tier 1 route.", summary.NewUnrouted.ToString(), Color.Info));
+        }
+
+        var missingCostBasis = portfolio.Holdings.Count(row => row.MissingCostBasis);
+        if (missingCostBasis > 0)
+        {
+            issues.Add(new CommandCenterIssue("Missing cost basis", "Holdings cannot calculate book value until cost basis is populated.", missingCostBasis.ToString(), Color.Warning));
+        }
+
+        return issues;
+    }
+
+    private static IReadOnlyList<FreshnessItem> BuildFreshness(
+        IReadOnlyList<CronHealthJobRow> cronJobs,
+        PortfolioDashboard portfolio,
+        CommandCenterSummary summary)
+    {
+        var latestCron = cronJobs
+            .Select(row => row.LastRun)
+            .Where(value => value.HasValue)
+            .Max();
+
+        return
+        [
+            new("Cron heartbeat", FormatDate(latestCron), FormatAge(latestCron), FreshnessColor(latestCron, TimeSpan.FromHours(6))),
+            new("Portfolio holdings", FormatDate(portfolio.LatestUpdate), FormatAge(portfolio.LatestUpdate), FreshnessColor(portfolio.LatestUpdate, TimeSpan.FromDays(2))),
+            new("Market prices", FormatDate(portfolio.LatestPriceFetchedAt), FormatAge(portfolio.LatestPriceFetchedAt), FreshnessColor(portfolio.LatestPriceFetchedAt, TimeSpan.FromHours(24))),
+            new("Today's signals", summary.TodaysSignals.ToString(), "since local midnight", summary.TodaysSignals == 0 ? Color.Default : Color.Info),
+            new("Open paper trades", summary.OpenPaperTrades.ToString(), "currently open", summary.OpenPaperTrades == 0 ? Color.Default : Color.Info)
+        ];
+    }
+
+    private static bool IsBrokenCron(CronHealthJobRow row)
+    {
+        return StatusRank(row.Status) >= 2;
+    }
+
+    private static int StatusRank(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "ok" or "success" or "delivered" => 0,
+            "running" or "pending" or "warning" or "skipped" or "disabled" => 1,
+            "unknown" => 2,
+            _ => 3
+        };
+    }
+
+    private static Color StatusColor(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "ok" or "success" or "delivered" => Color.Success,
+            "running" or "pending" => Color.Info,
+            "warning" => Color.Warning,
+            "skipped" or "disabled" or "unknown" => Color.Default,
+            _ => Color.Error
+        };
+    }
+
+    private static Color FreshnessColor(DateTime? value, TimeSpan maxAge)
+    {
+        if (value is null)
+        {
+            return Color.Warning;
+        }
+
+        return DateTime.Now - value.Value > maxAge ? Color.Warning : Color.Success;
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value is null ? "unknown" : value.Value.ToString("g");
+    }
+
+    private static string FormatAge(DateTime? value)
+    {
+        if (value is null)
+        {
+            return "unknown";
+        }
+
+        var age = DateTime.Now - value.Value;
+        if (age.TotalMinutes < 1)
+        {
+            return "now";
+        }
+
+        if (age.TotalHours < 1)
+        {
+            return $"{age.TotalMinutes:0}m ago";
+        }
+
+        if (age.TotalDays < 1)
+        {
+            return $"{age.TotalHours:0.0}h ago";
+        }
+
+        return $"{age.TotalDays:0.0}d ago";
+    }
+
+    private static string FormatError(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "none";
+        }
+
+        return value.Length <= 160 ? value : $"{value[..160]}...";
+    }
+
+    private sealed record CommandCenterIssue(string Title, string Detail, string Value, Color Color);
+
+    private sealed record FreshnessItem(string Label, string Value, string Detail, Color Color);
 }
