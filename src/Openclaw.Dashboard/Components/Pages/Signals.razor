@@ -92,7 +92,7 @@
             </MudTd>
             <MudTd DataLabel="Dir">@context.Direction</MudTd>
             <MudTd DataLabel="Route">
-                <MudChip T="string" Size="Size.Small" Color="@RouteColor(context.Route)" Variant="@RouteVariant(context.Route)">
+                <MudChip T="string" Size="Size.Small" Color="@RouteColor(context.Route)" Variant="@RouteVariant(context.Route)" Class="oc-route-chip">
                     @FormatRoute(context.Route)
                 </MudChip>
             </MudTd>

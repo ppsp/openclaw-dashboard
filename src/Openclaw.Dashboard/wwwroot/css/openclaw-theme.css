@@ -540,6 +540,22 @@ body::before {
     color: #bba7ff !important;
 }
 
+.oc-route-chip.mud-chip-filled,
+.oc-route-chip.mud-chip-filled .mud-chip-content {
+    color: #050913 !important;
+    text-shadow: none;
+}
+
+.oc-route-chip.mud-chip-filled.mud-chip-color-warning,
+.oc-route-chip.mud-chip-filled.mud-chip-color-warning .mud-chip-content {
+    color: #120b02 !important;
+}
+
+.oc-route-chip.mud-chip-outlined,
+.oc-route-chip.mud-chip-outlined .mud-chip-content {
+    color: var(--oc-muted) !important;
+}
+
 .mud-button-outlined-primary {
     background: linear-gradient(90deg, rgba(0, 229, 255, 0.08), rgba(139, 92, 246, 0.05)) !important;
     border-color: rgba(0, 229, 255, 0.54) !important;
