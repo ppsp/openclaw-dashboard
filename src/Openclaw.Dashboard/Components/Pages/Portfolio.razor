@@ -1,6 +1,7 @@
 @page "/portfolio"
 @using Openclaw.Dashboard.Services
 @inject PortfolioTrackingService PortfolioTrackingService
+@inject MarketPriceService MarketPriceService
 
 <MudStack Spacing="3">
     <div class="page-title">
@@ -51,9 +52,10 @@
                                     <MudText Typo="Typo.h6">@FormatPercent(account.CashLikePct)</MudText>
                                 </MudItem>
                                 <MudItem xs="6">
-                                    <MudText Typo="Typo.overline">Unknown Cost</MudText>
-                                    <MudText Typo="Typo.h6" Color="@(account.UnknownValueHoldings > 0 ? Color.Warning : Color.Default)">
-                                        @account.UnknownValueHoldings
+                                    <MudText Typo="Typo.overline">Current Value</MudText>
+                                    <MudText Typo="Typo.h6">@FormatMoney(account.CurrentValue, account.CurrentValueCurrency)</MudText>
+                                    <MudText Typo="Typo.caption" Color="@PnlColor(account.UnrealizedPnl)">
+                                        @FormatSignedMoney(account.UnrealizedPnl, account.CurrentValueCurrency) @FormatSignedPercent(account.UnrealizedPnlPct)
                                     </MudText>
                                 </MudItem>
                             </MudGrid>
@@ -85,7 +87,10 @@
                 </MudItem>
                 <MudItem xs="12" md="4">
                     <MudText Typo="Typo.overline">Current Value</MudText>
-                    <MudText Typo="Typo.h6" Class="placeholder-line">Unavailable until quote data is wired</MudText>
+                    <MudText Typo="Typo.h6">@FormatMoney(CurrentValue, CurrentValueCurrency)</MudText>
+                    <MudText Typo="Typo.caption" Color="@PnlColor(CurrentUnrealizedPnl)">
+                        @FormatSignedMoney(CurrentUnrealizedPnl, CurrentValueCurrency) @FormatSignedPercent(CurrentUnrealizedPnlPct)
+                    </MudText>
                 </MudItem>
             </MudGrid>
         </MudPaper>
@@ -103,6 +108,23 @@
                         <MudSelectItem Value="@account.AccountId">@account.AccountName</MudSelectItem>
                     }
                 </MudSelect>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.h6">Market Prices</MudText>
+                    <MudText Typo="Typo.body2" Class="placeholder-line">@PriceRefreshStatus</MudText>
+                </MudStack>
+                @if (_refreshingPrices)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Paid" Color="Color.Primary" />
+                }
             </MudStack>
         </MudPaper>
 
@@ -181,6 +203,9 @@
                         <MudTh>Avg CAD</MudTh>
                         <MudTh>Avg USD</MudTh>
                         <MudTh>Book Value</MudTh>
+                        <MudTh>Current Price</MudTh>
+                        <MudTh>Current Value</MudTh>
+                        <MudTh>P/L</MudTh>
                         <MudTh>Weight</MudTh>
                         <MudTh>Last Update</MudTh>
                     </HeaderContent>
@@ -201,6 +226,19 @@
                         <MudTd DataLabel="Book Value">
                             @FormatMoney(context.BookValue)
                             <MudText Typo="Typo.caption" Class="placeholder-line">@context.BookValueCurrency</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Current Price">
+                            @FormatMoney(context.CurrentPrice, context.CurrentPriceCurrency)
+                            <MudText Typo="Typo.caption" Class="placeholder-line">@FormatPriceMeta(context)</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Current Value">@FormatMoney(context.CurrentValue, context.CurrentPriceCurrency)</MudTd>
+                        <MudTd DataLabel="P/L">
+                            <MudText Color="@PnlColor(context.UnrealizedPnl)">
+                                @FormatSignedMoney(context.UnrealizedPnl, context.CurrentPriceCurrency)
+                            </MudText>
+                            <MudText Typo="Typo.caption" Color="@PnlColor(context.UnrealizedPnlPct)">
+                                @FormatSignedPercent(context.UnrealizedPnlPct)
+                            </MudText>
                         </MudTd>
                         <MudTd DataLabel="Weight">@FormatPercent(context.AccountWeightPct)</MudTd>
                         <MudTd DataLabel="Last Update">@FormatDate(context.LastUpdate)</MudTd>
@@ -280,9 +318,50 @@
 
     private PortfolioDashboard? _dashboard;
     private bool _loading = true;
+    private bool _refreshingPrices;
+    private MarketPriceRefreshResult? _refreshResult;
     private string _selectedAccount = AllAccounts;
 
     private decimal? TotalBookValue => SumOrNull(_dashboard?.Accounts.Select(account => account.BookValue));
+
+    private PortfolioAccountSummary? SelectedAccount => _dashboard?.Accounts
+        .FirstOrDefault(account => account.AccountId.Equals(_selectedAccount, StringComparison.OrdinalIgnoreCase));
+
+    private decimal? CurrentValue => _selectedAccount == AllAccounts
+        ? _dashboard?.TotalCurrentValue
+        : SelectedAccount?.CurrentValue;
+
+    private decimal? CurrentUnrealizedPnl => _selectedAccount == AllAccounts
+        ? _dashboard?.TotalUnrealizedPnl
+        : SelectedAccount?.UnrealizedPnl;
+
+    private decimal? CurrentUnrealizedPnlPct => _selectedAccount == AllAccounts
+        ? _dashboard?.TotalUnrealizedPnlPct
+        : SelectedAccount?.UnrealizedPnlPct;
+
+    private string? CurrentValueCurrency => _selectedAccount == AllAccounts
+        ? _dashboard?.TotalCurrentValueCurrency
+        : SelectedAccount?.CurrentValueCurrency;
+
+    private string PriceRefreshStatus
+    {
+        get
+        {
+            if (_refreshingPrices)
+            {
+                return "Refreshing stale cached quotes...";
+            }
+
+            if (_refreshResult is not null)
+            {
+                return $"Yahoo cache checked {_refreshResult.Requested} symbols, refreshed {_refreshResult.Refreshed}, failed {_refreshResult.Failed}.";
+            }
+
+            return _dashboard?.LatestPriceFetchedAt is null
+                ? "No cached market prices yet."
+                : $"Latest cached quote {FormatDateTime(_dashboard.LatestPriceFetchedAt)}.";
+        }
+    }
 
     private IReadOnlyList<PortfolioHoldingRow> FilteredHoldings =>
         _dashboard?.Holdings
@@ -341,6 +420,20 @@
     {
         _dashboard = await PortfolioTrackingService.GetDashboardAsync();
         _loading = false;
+        await InvokeAsync(StateHasChanged);
+
+        var symbols = _dashboard.Holdings.Select(row => row.Ticker).ToList();
+        if (symbols.Count == 0)
+        {
+            return;
+        }
+
+        _refreshingPrices = true;
+        await InvokeAsync(StateHasChanged);
+
+        _refreshResult = await MarketPriceService.RefreshStalePricesAsync(symbols);
+        _dashboard = await PortfolioTrackingService.GetDashboardAsync();
+        _refreshingPrices = false;
     }
 
     private bool IsSelectedAccount(string accountId)
@@ -446,9 +539,32 @@
         return value?.ToString("$#,##0.00;-$#,##0.00") ?? "-";
     }
 
+    private static string FormatMoney(decimal? value, string? currency)
+    {
+        return value is null
+            ? "-"
+            : string.IsNullOrWhiteSpace(currency)
+                ? FormatMoney(value)
+                : $"{value.Value:$#,##0.00;-$#,##0.00} {currency}";
+    }
+
+    private static string FormatSignedMoney(decimal? value, string? currency)
+    {
+        return value is null
+            ? "-"
+            : string.IsNullOrWhiteSpace(currency)
+                ? value.Value.ToString("+$#,##0.00;-$#,##0.00;$0.00")
+                : $"{value.Value:+$#,##0.00;-$#,##0.00;$0.00} {currency}";
+    }
+
     private static string FormatPercent(decimal? value)
     {
         return value.HasValue ? $"{value.Value:0.0}%" : "-";
+    }
+
+    private static string FormatSignedPercent(decimal? value)
+    {
+        return value.HasValue ? $"({value.Value:+0.0;-0.0;0.0}%)" : string.Empty;
     }
 
     private static string FormatQuantity(decimal value)
@@ -459,6 +575,36 @@
     private static string FormatDate(DateTime? value)
     {
         return value?.ToString("yyyy-MM-dd") ?? "-";
+    }
+
+    private static string FormatDateTime(DateTime? value)
+    {
+        return value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+    }
+
+    private static string FormatPriceMeta(PortfolioHoldingRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.CurrentPriceError) && row.CurrentPrice is null)
+        {
+            return "Refresh failed";
+        }
+
+        if (row.CurrentPriceFetchedAt is null)
+        {
+            return row.CurrentPriceError is null ? "No cached quote" : "Using prior cache";
+        }
+
+        return $"{row.CurrentPriceProvider ?? "Cache"} {FormatDateTime(row.CurrentPriceFetchedAt)}";
+    }
+
+    private static Color PnlColor(decimal? value)
+    {
+        return value switch
+        {
+            > 0m => Color.Success,
+            < 0m => Color.Error,
+            _ => Color.Default
+        };
     }
 
     private static string FormatText(string? value)
