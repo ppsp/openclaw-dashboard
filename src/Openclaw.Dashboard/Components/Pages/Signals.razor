@@ -1,9 +1,6 @@
 @page "/signals"
 @using Openclaw.Dashboard.Services
 @inject SignalQueryService SignalQueryService
-@inject SignalReviewService SignalReviewService
-@inject IDialogService DialogService
-@inject ISnackbar Snackbar
 @inject DashboardTimeService DashboardTime
 
 <MudStack Spacing="3">
@@ -78,13 +75,13 @@
             <MudTh>Route</MudTh>
             <MudTh>Alpha</MudTh>
             <MudTh>Ready</MudTh>
+            <MudTh>Parse Q</MudTh>
+            <MudTh>Idea Q</MudTh>
             <MudTh>Reason</MudTh>
             <MudTh>Description</MudTh>
             <MudTh>Source</MudTh>
             <MudTh>Link</MudTh>
             <MudTh>Discovered (ET)</MudTh>
-            <MudTh>Tier 0</MudTh>
-            <MudTh>Rate T0</MudTh>
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Ticker">
@@ -92,12 +89,14 @@
             </MudTd>
             <MudTd DataLabel="Dir">@context.Direction</MudTd>
             <MudTd DataLabel="Route">
-                <MudChip T="string" Size="Size.Small" Color="@RouteColor(context.Route)" Variant="@RouteVariant(context.Route)">
+                <MudChip T="string" Size="Size.Small" Color="@RouteColor(context.Route)" Variant="@RouteVariant(context.Route)" Class="oc-route-chip">
                     @FormatRoute(context.Route)
                 </MudChip>
             </MudTd>
             <MudTd DataLabel="Alpha">@FormatInt(context.AlphaScore)</MudTd>
             <MudTd DataLabel="Ready">@FormatInt(context.ReadinessScore)</MudTd>
+            <MudTd DataLabel="Parse Q">@FormatQuality(context.Tier1ParseQuality)</MudTd>
+            <MudTd DataLabel="Idea Q">@FormatQuality(context.Tier1AlphaQuality)</MudTd>
             <MudTd DataLabel="Reason">@FormatText(context.ReasonCategory)</MudTd>
             <MudTd DataLabel="Description">
                 <MudTooltip Text="@context.DescriptionTooltip" Placement="Placement.Bottom" Arrow="true">
@@ -116,29 +115,6 @@
                 }
             </MudTd>
             <MudTd DataLabel="Discovered">@FormatDate(context.DiscoveredAt)</MudTd>
-            <MudTd DataLabel="Tier 0">@FormatQuality(context.Tier0Quality)</MudTd>
-            <MudTd DataLabel="Rate T0">
-                <MudStack Row="true" Spacing="1">
-                    <MudTooltip Text="Good">
-                        <MudIconButton Icon="@Icons.Material.Filled.ThumbUp"
-                                       Color="Color.Success"
-                                       Size="Size.Small"
-                                       OnClick="@(() => OpenReviewDialog(context, "good"))" />
-                    </MudTooltip>
-                    <MudTooltip Text="Medium / neutral">
-                        <MudIconButton Icon="@Icons.Material.Filled.Remove"
-                                       Color="Color.Warning"
-                                       Size="Size.Small"
-                                       OnClick="@(() => OpenReviewDialog(context, "medium"))" />
-                    </MudTooltip>
-                    <MudTooltip Text="Bad">
-                        <MudIconButton Icon="@Icons.Material.Filled.ThumbDown"
-                                       Color="Color.Error"
-                                       Size="Size.Small"
-                                       OnClick="@(() => OpenReviewDialog(context, "bad"))" />
-                    </MudTooltip>
-                </MudStack>
-            </MudTd>
         </RowTemplate>
         <NoRecordsContent>
             <MudText Class="pa-4 placeholder-line">No signals match the current filters.</MudText>
@@ -210,48 +186,6 @@
         _toDate = null;
 
         return ApplyFilters();
-    }
-
-    private async Task OpenReviewDialog(SignalRow signal, string decision)
-    {
-        var parameters = new DialogParameters<SignalReviewDialog>
-        {
-            { dialog => dialog.SignalId, signal.Id },
-            { dialog => dialog.Stage, "tier0" },
-            { dialog => dialog.Decision, decision },
-            { dialog => dialog.CurrentNote, null }
-        };
-
-        var options = new DialogOptions
-        {
-            CloseButton = true,
-            MaxWidth = MaxWidth.Small,
-            FullWidth = true
-        };
-
-        var dialog = await DialogService.ShowAsync<SignalReviewDialog>($"Rate Tier 0 signal {signal.Id}", parameters, options);
-        var result = await dialog.Result;
-
-        if (result is null || result.Canceled || result.Data is not SignalReviewRequest request)
-        {
-            return;
-        }
-
-        try
-        {
-            await SignalReviewService.SaveReviewAsync(request);
-            Snackbar.Add($"Signal {signal.Id} Tier 0 quality saved.", Severity.Success);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-            return;
-        }
-
-        if (_table is not null)
-        {
-            await _table.ReloadServerData();
-        }
     }
 
     private string FormatDate(DateTime? value)

@@ -22,6 +22,8 @@ public sealed class SignalReviewService(
     {
         "tier0",
         "tier1",
+        "tier1_parse",
+        "tier1_alpha",
         "tier2"
     };
 
@@ -180,6 +182,16 @@ public sealed class SignalReviewService(
             await AddColumnAsync(connection, "tier1_quality", cancellationToken);
         }
 
+        if (!await HasColumnAsync(connection, "signals", "tier1_parse_quality", cancellationToken))
+        {
+            await AddColumnAsync(connection, "tier1_parse_quality", cancellationToken);
+        }
+
+        if (!await HasColumnAsync(connection, "signals", "tier1_alpha_quality", cancellationToken))
+        {
+            await AddColumnAsync(connection, "tier1_alpha_quality", cancellationToken);
+        }
+
         if (!await HasColumnAsync(connection, "signals", "tier2_quality", cancellationToken))
         {
             await AddColumnAsync(connection, "tier2_quality", cancellationToken);
@@ -221,7 +233,7 @@ public sealed class SignalReviewService(
     {
         if (!AllowedStages.Contains(stage ?? string.Empty))
         {
-            throw new InvalidOperationException("Stage must be tier0, tier1, or tier2.");
+            throw new InvalidOperationException("Stage must be tier0, tier1_parse, tier1_alpha, tier1, or tier2.");
         }
 
         return stage!.ToLowerInvariant();
@@ -263,8 +275,10 @@ public sealed class SignalReviewService(
         {
             "tier0" => "tier0_quality",
             "tier1" => "tier1_quality",
+            "tier1_parse" => "tier1_parse_quality",
+            "tier1_alpha" => "tier1_alpha_quality",
             "tier2" => "tier2_quality",
-            _ => throw new InvalidOperationException("Stage must be tier0, tier1, or tier2.")
+            _ => throw new InvalidOperationException("Stage must be tier0, tier1_parse, tier1_alpha, tier1, or tier2.")
         };
     }
 

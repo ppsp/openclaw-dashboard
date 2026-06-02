@@ -9,13 +9,14 @@
 
 <MudLayout Class="oc-shell">
     <MudAppBar Elevation="1" Dense="true" Class="oc-topbar">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu"
-                       Color="Color.Inherit"
-                       Edge="Edge.Start"
-                       Class="oc-menu-toggle"
-                       OnClick="ToggleDrawer" />
         <div class="oc-brand-lockup">
-            <MudIcon Icon="@Icons.Material.Filled.Waves" Class="oc-brand-mark" />
+            <img src="favicon.png" alt="" class="oc-brand-favicon" />
+            <MudIconButton Icon="@Icons.Material.Filled.Waves"
+                           Color="Color.Inherit"
+                           Edge="Edge.Start"
+                           Class="oc-brand-menu"
+                           OnClick="ToggleDrawer"
+                           aria-label="Toggle navigation" />
             <div>
                 <MudText Typo="Typo.h6" Class="app-title">Openclaw</MudText>
                 <MudText Typo="Typo.caption" Class="oc-brand-subtitle">Mission Control</MudText>
@@ -38,10 +39,6 @@
             <div class="oc-hud-stat">
                 <MudText Typo="Typo.caption" Class="oc-hud-label">Latency</MudText>
                 <strong class="oc-hud-value">@_latencyText</strong>
-            </div>
-            <div class="oc-hud-stat">
-                <MudText Typo="Typo.caption" Class="oc-hud-label">Uptime</MudText>
-                <strong class="oc-hud-value">@UptimeText</strong>
             </div>
         </div>
         <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small" Class="oc-env-chip">Local</MudChip>
@@ -86,18 +83,6 @@
     private int _agentCount;
     private int _brokenCount;
     private string _latencyText = "--";
-    private static readonly DateTime _startedAt = DateTime.Now;
-
-    private string UptimeText
-    {
-        get
-        {
-            var uptime = DateTime.Now - _startedAt;
-            return uptime.TotalDays >= 1
-                ? $"{uptime.TotalDays:0}d {uptime.Hours}h"
-                : $"{Math.Max(0, uptime.Hours)}h {uptime.Minutes}m";
-        }
-    }
 
     private readonly MudTheme _theme = new()
     {

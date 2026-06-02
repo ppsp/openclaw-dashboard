@@ -44,6 +44,10 @@ public sealed class Signal
 
     public string? Tier1Quality { get; set; }
 
+    public string? Tier1ParseQuality { get; set; }
+
+    public string? Tier1AlphaQuality { get; set; }
+
     public string? Tier2Quality { get; set; }
 
     public string? OutcomeStatus { get; set; }

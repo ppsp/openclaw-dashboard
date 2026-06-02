@@ -60,6 +60,8 @@ public sealed class SignalQueryService(
                     signal.Rating,
                     signal.Tier0Quality,
                     signal.Tier1Quality,
+                    signal.Tier1ParseQuality,
+                    signal.Tier1AlphaQuality,
                     signal.Tier2Quality
                 })
                 .ToListAsync(cancellationToken);
@@ -69,8 +71,8 @@ public sealed class SignalQueryService(
                     signal.Id,
                     ExtractTicker(signal.Tier2Result, signal.Tier1Dims, signal.RawSignal),
                     ReadStringFromJson(signal.Tier1Dims, "direction") ?? "-",
-                    BuildDescription(signal.RawSignal, 120),
-                    BuildDescription(signal.RawSignal, 500),
+                    BuildTableDescription(signal.Tier1Dims, signal.RawSignal, 120),
+                    BuildTableDescription(signal.Tier1Dims, signal.RawSignal, 500),
                     signal.Source,
                     ResolveSourceDisplay(signal.Source, signal.RawSignal),
                     signal.Url,
@@ -87,6 +89,8 @@ public sealed class SignalQueryService(
                     signal.Rating,
                     signal.Tier0Quality,
                     signal.Tier1Quality,
+                    signal.Tier1ParseQuality,
+                    signal.Tier1AlphaQuality,
                     signal.Tier2Quality))
                 .ToList();
 
@@ -131,6 +135,8 @@ public sealed class SignalQueryService(
                 signal.Rating,
                 signal.Tier0Quality,
                 signal.Tier1Quality,
+                signal.Tier1ParseQuality,
+                signal.Tier1AlphaQuality,
                 signal.Tier2Quality,
                 signal.OutcomeStatus,
                 signal.TriggeredAt,
@@ -305,6 +311,146 @@ public sealed class SignalQueryService(
 
         var normalized = Regex.Replace(rawSignal, @"\s+", " ").Trim();
         return normalized.Length <= maxLength ? normalized : $"{normalized[..(maxLength - 3)]}...";
+    }
+
+    private static string BuildTableDescription(string? tier1Dims, string? rawSignal, int maxLength)
+    {
+        var tier1Summary = BuildTier1Summary(tier1Dims);
+        return !string.IsNullOrWhiteSpace(tier1Summary)
+            ? TruncateDescription(tier1Summary, maxLength)
+            : BuildDescription(rawSignal, maxLength);
+    }
+
+    private static string? BuildTier1Summary(string? tier1Dims)
+    {
+        if (string.IsNullOrWhiteSpace(tier1Dims))
+        {
+            return null;
+        }
+
+        using var document = TryParseJson(tier1Dims);
+        if (document is null)
+        {
+            return null;
+        }
+
+        var fields = new[]
+        {
+            new Tier1SummaryField("thesis_summary", null),
+            new Tier1SummaryField("evidence_quote", "Evidence"),
+            new Tier1SummaryField("trade_type", "Trade"),
+            new Tier1SummaryField("key_levels", "Levels"),
+            new Tier1SummaryField("catalyst", "Catalyst")
+        };
+
+        var parts = new List<string>();
+        foreach (var field in fields)
+        {
+            if (!TryReadJsonProperty(document.RootElement, field.PropertyName, out var value))
+            {
+                continue;
+            }
+
+            var text = FormatSummaryJsonValue(value);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            parts.Add(field.Label is null ? text : $"{field.Label}: {text}");
+        }
+
+        return parts.Count == 0 ? null : string.Join(" | ", parts);
+    }
+
+    private static string TruncateDescription(string description, int maxLength)
+    {
+        var normalized = Regex.Replace(description, @"\s+", " ").Trim();
+        return normalized.Length <= maxLength ? normalized : $"{normalized[..(maxLength - 3)]}...";
+    }
+
+    private static string? FormatSummaryJsonValue(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => NormalizeSummaryText(value.GetString()),
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Array => FormatSummaryArray(value),
+            JsonValueKind.Object => FormatSummaryObject(value),
+            _ => null
+        };
+    }
+
+    private static string? FormatSummaryArray(JsonElement value)
+    {
+        var items = value
+            .EnumerateArray()
+            .Select(FormatSummaryJsonValue)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToList();
+
+        return items.Count == 0 ? null : string.Join(", ", items);
+    }
+
+    private static string? FormatSummaryObject(JsonElement value)
+    {
+        var parts = value
+            .EnumerateObject()
+            .Select(property =>
+            {
+                var text = FormatSummaryJsonValue(property.Value);
+                return string.IsNullOrWhiteSpace(text) ? null : $"{property.Name}: {text}";
+            })
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToList();
+
+        return parts.Count == 0 ? null : string.Join("; ", parts);
+    }
+
+    private static string? NormalizeSummaryText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : Regex.Replace(value, @"\s+", " ").Trim();
+    }
+
+    private static bool TryReadJsonProperty(JsonElement element, string propertyName, out JsonElement value)
+    {
+        value = default;
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                if (TryReadJsonProperty(property.Value, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                if (TryReadJsonProperty(item, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static string ExtractTicker(string? tier2Result, string? tier1Dims, string? rawSignal)
@@ -505,4 +651,6 @@ public sealed class SignalQueryService(
             return null;
         }
     }
+
+    private sealed record Tier1SummaryField(string PropertyName, string? Label);
 }
