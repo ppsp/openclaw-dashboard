@@ -1,24 +1,59 @@
 @inherits LayoutComponentBase
+@using Openclaw.Dashboard.Services
+@inject CronHealthService CronHealthService
 
 <MudThemeProvider Theme="_theme" IsDarkMode="true" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
-<MudLayout>
-    <MudAppBar Elevation="1" Dense="true">
+<MudLayout Class="oc-shell">
+    <MudAppBar Elevation="1" Dense="true" Class="oc-topbar">
         <MudIconButton Icon="@Icons.Material.Filled.Menu"
                        Color="Color.Inherit"
                        Edge="Edge.Start"
+                       Class="oc-menu-toggle"
                        OnClick="ToggleDrawer" />
-        <MudText Typo="Typo.h6" Class="app-title">Openclaw Mission Control</MudText>
+        <div class="oc-brand-lockup">
+            <MudIcon Icon="@Icons.Material.Filled.Waves" Class="oc-brand-mark" />
+            <div>
+                <MudText Typo="Typo.h6" Class="app-title">Openclaw</MudText>
+                <MudText Typo="Typo.caption" Class="oc-brand-subtitle">Mission Control</MudText>
+            </div>
+        </div>
         <MudSpacer />
-        <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">Local</MudChip>
+        <div class="oc-topbar-hud">
+            <div class="oc-hud-stat oc-hud-stat-success">
+                <MudText Typo="Typo.caption" Class="oc-hud-label">Live Ops</MudText>
+                <strong class="oc-hud-value">@_liveOpsStatus</strong>
+            </div>
+            <div class="oc-hud-stat">
+                <MudText Typo="Typo.caption" Class="oc-hud-label">Agents</MudText>
+                <strong class="oc-hud-value">@_agentCount</strong>
+            </div>
+            <div class="oc-hud-stat oc-hud-stat-danger">
+                <MudText Typo="Typo.caption" Class="oc-hud-label">Broken</MudText>
+                <strong class="oc-hud-value">@_brokenCount</strong>
+            </div>
+            <div class="oc-hud-stat">
+                <MudText Typo="Typo.caption" Class="oc-hud-label">Latency</MudText>
+                <strong class="oc-hud-value">@_latencyText</strong>
+            </div>
+            <div class="oc-hud-stat">
+                <MudText Typo="Typo.caption" Class="oc-hud-label">Uptime</MudText>
+                <strong class="oc-hud-value">@UptimeText</strong>
+            </div>
+        </div>
+        <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small" Class="oc-env-chip">Local</MudChip>
+        <MudIconButton Icon="@Icons.Material.Filled.Notifications"
+                       Color="@(_brokenCount > 0 ? Color.Error : Color.Inherit)"
+                       Class="oc-topbar-icon"
+                       aria-label="Notifications" />
         <MudButton Href="/logout"
                    Color="Color.Inherit"
                    Variant="Variant.Text"
                    StartIcon="@Icons.Material.Filled.Logout"
-                   Class="ms-2">
+                   Class="oc-signout">
             Sign out
         </MudButton>
     </MudAppBar>
@@ -27,7 +62,8 @@
                Variant="DrawerVariant.Responsive"
                Breakpoint="Breakpoint.Md"
                Elevation="1"
-               ClipMode="DrawerClipMode.Always">
+               ClipMode="DrawerClipMode.Always"
+               Class="oc-sidebar">
         <NavMenu />
     </MudDrawer>
 
@@ -46,34 +82,50 @@
 
 @code {
     private bool _drawerOpen = true;
+    private string _liveOpsStatus = "Local";
+    private int _agentCount;
+    private int _brokenCount;
+    private string _latencyText = "--";
+    private static readonly DateTime _startedAt = DateTime.Now;
+
+    private string UptimeText
+    {
+        get
+        {
+            var uptime = DateTime.Now - _startedAt;
+            return uptime.TotalDays >= 1
+                ? $"{uptime.TotalDays:0}d {uptime.Hours}h"
+                : $"{Math.Max(0, uptime.Hours)}h {uptime.Minutes}m";
+        }
+    }
 
     private readonly MudTheme _theme = new()
     {
         PaletteDark = new PaletteDark
         {
             Primary = "#00e5ff",
-            Secondary = "#ff2bd6",
-            Tertiary = "#b6ff00",
-            AppbarBackground = "#0b1020",
-            AppbarText = "#f4fbff",
-            Background = "#070a12",
-            BackgroundGray = "#0b1020",
-            Surface = "#101827",
-            DrawerBackground = "#090e1a",
-            DrawerText = "#d8f7ff",
-            TextPrimary = "#f4fbff",
-            TextSecondary = "#91a9bd",
+            Secondary = "#ff2f8f",
+            Tertiary = "#8b5cf6",
+            AppbarBackground = "#050913",
+            AppbarText = "#eafbff",
+            Background = "#050913",
+            BackgroundGray = "#0b1220",
+            Surface = "#101b2d",
+            DrawerBackground = "#07101c",
+            DrawerText = "#eafbff",
+            TextPrimary = "#eafbff",
+            TextSecondary = "#8fa9b8",
             ActionDefault = "#00e5ff",
-            Divider = "#23364d",
-            DividerLight = "#162437",
-            LinesDefault = "#23364d",
-            TableLines = "#23364d",
-            TableStriped = "#0d1625",
-            TableHover = "#122842",
-            Success = "#2dff9a",
-            Warning = "#ffd166",
-            Error = "#ff4d7d",
-            Info = "#7c5cff"
+            Divider = "#183750",
+            DividerLight = "#0f273c",
+            LinesDefault = "#183750",
+            TableLines = "#183750",
+            TableStriped = "#0a1727",
+            TableHover = "#0e2c43",
+            Success = "#00ff88",
+            Warning = "#ffb020",
+            Error = "#ff2f8f",
+            Info = "#8b5cf6"
         },
         LayoutProperties = new LayoutProperties
         {
@@ -81,8 +133,39 @@
         }
     };
 
+    protected override async Task OnInitializedAsync()
+    {
+        var started = DateTime.UtcNow;
+
+        try
+        {
+            var jobs = await CronHealthService.GetJobsAsync();
+            _agentCount = jobs.Count;
+            _brokenCount = jobs.Count(row => IsBrokenStatus(row.Status));
+            _liveOpsStatus = _brokenCount > 0 ? "Alert" : "Local";
+        }
+        catch
+        {
+            _liveOpsStatus = "Degraded";
+        }
+        finally
+        {
+            var elapsed = DateTime.UtcNow - started;
+            _latencyText = $"{Math.Max(1, elapsed.TotalMilliseconds):0}ms";
+        }
+    }
+
     private void ToggleDrawer()
     {
         _drawerOpen = !_drawerOpen;
+    }
+
+    private static bool IsBrokenStatus(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "ok" or "success" or "delivered" or "running" or "pending" or "warning" or "skipped" or "disabled" => false,
+            _ => true
+        };
     }
 }

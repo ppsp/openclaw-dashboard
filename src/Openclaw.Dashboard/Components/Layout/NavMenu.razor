@@ -1,35 +1,61 @@
-<MudStack Class="nav-shell" Spacing="1">
-    <MudText Typo="Typo.overline" Class="nav-kicker">Dashboard</MudText>
+<MudStack Class="nav-shell oc-sidebar-inner" Spacing="2">
+    <div class="oc-sidebar-header">
+        <MudIcon Icon="@Icons.Material.Filled.Hub" />
+        <div>
+            <MudText Typo="Typo.overline" Class="nav-kicker">Navigation</MudText>
+            <MudText Typo="Typo.caption" Class="oc-sidebar-subtitle">Control matrix</MudText>
+        </div>
+    </div>
     <MudNavMenu Dense="true" Color="Color.Primary">
-        <MudNavLink Href="/command-center" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
+        <MudNavLink Href="/command-center" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" Class="oc-nav-item">
             Command Center
         </MudNavLink>
-        <MudNavLink Href="/signals" Icon="@Icons.Material.Filled.Radar">
+        <MudNavLink Href="/signals" Icon="@Icons.Material.Filled.Radar" Class="oc-nav-item">
             Signals
         </MudNavLink>
-        <MudNavLink Href="/portfolio" Icon="@Icons.Material.Filled.AccountBalance">
+        <MudNavLink Href="/portfolio" Icon="@Icons.Material.Filled.AccountBalance" Class="oc-nav-item">
             Portfolio
         </MudNavLink>
-        <MudNavLink Href="/paper-trades" Icon="@Icons.Material.Filled.AssignmentTurnedIn">
+        <MudNavLink Href="/paper-trades" Icon="@Icons.Material.Filled.AssignmentTurnedIn" Class="oc-nav-item">
             Paper Trades
         </MudNavLink>
-        <MudNavLink Href="/cron-health" Icon="@Icons.Material.Filled.MonitorHeart">
+        <MudNavLink Href="/cron-health" Icon="@Icons.Material.Filled.MonitorHeart" Class="oc-nav-item">
             Cron Health
         </MudNavLink>
-        <MudNavLink Href="/source-leaderboard" Icon="@Icons.Material.Filled.Leaderboard">
+        <MudNavLink Href="/source-leaderboard" Icon="@Icons.Material.Filled.Leaderboard" Class="oc-nav-item">
             Source Leaderboard
         </MudNavLink>
-        <MudNavLink Href="/creator-sources" Icon="@Icons.Material.Filled.Groups">
+        <MudNavLink Href="/creator-sources" Icon="@Icons.Material.Filled.Groups" Class="oc-nav-item">
             Creator Sources
         </MudNavLink>
-        <MudNavLink Href="/ticker-watchlist" Icon="@Icons.Material.Filled.FormatListBulleted">
+        <MudNavLink Href="/ticker-watchlist" Icon="@Icons.Material.Filled.FormatListBulleted" Class="oc-nav-item">
             Ticker Watchlist
         </MudNavLink>
-        <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">
+        <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings" Class="oc-nav-item">
             Settings
         </MudNavLink>
-        <MudNavLink Href="/diagnostics" Icon="@Icons.Material.Filled.HealthAndSafety">
+        <MudNavLink Href="/diagnostics" Icon="@Icons.Material.Filled.HealthAndSafety" Class="oc-nav-item">
             Diagnostics
         </MudNavLink>
     </MudNavMenu>
+
+    <div class="oc-system-status">
+        <MudText Typo="Typo.overline">System Status</MudText>
+        <div class="oc-system-status-row">
+            <span>Runner</span>
+            <strong class="is-online">Online</strong>
+        </div>
+        <div class="oc-system-status-row">
+            <span>Database</span>
+            <strong>SQLite</strong>
+        </div>
+        <div class="oc-system-status-row">
+            <span>Mode</span>
+            <strong>Local</strong>
+        </div>
+        <div class="oc-system-status-row">
+            <span>Build</span>
+            <strong>Dev</strong>
+        </div>
+    </div>
 </MudStack>
