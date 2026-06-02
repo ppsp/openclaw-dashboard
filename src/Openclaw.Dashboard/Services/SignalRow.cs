@@ -22,4 +22,6 @@ public sealed record SignalRow(
     int? Rating,
     string? Tier0Quality,
     string? Tier1Quality,
+    string? Tier1ParseQuality,
+    string? Tier1AlphaQuality,
     string? Tier2Quality);

@@ -32,13 +32,14 @@
             <MudStack Spacing="2">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
                     <div>
-                        <MudText Typo="Typo.h6">Quality Labels</MudText>
-                        <MudText Typo="Typo.body2" Class="placeholder-line">Rate the raw signal, Tier 1 classification, and Tier 2 trade plan separately.</MudText>
+                        <MudText Typo="Typo.h6">Review Ratings</MudText>
+                        <MudText Typo="Typo.body2" Class="placeholder-line">Rate capture, parsing, idea value, and trade planning separately.</MudText>
                     </div>
                 </MudStack>
-                @QualityRow("Tier 0 raw signal", "tier0", _signal.Tier0Quality, _tier0Review)
-                @QualityRow("Tier 1 classification", "tier1", _signal.Tier1Quality, _tier1Review)
-                @QualityRow("Tier 2 trade plan", "tier2", _signal.Tier2Quality, _tier2Review)
+                @QualityRow("T0 Capture", "Should this raw item have been saved?", "tier0", _signal.Tier0Quality, _tier0Review)
+                @QualityRow("T1 Parse", "Did extraction and classification match the source?", "tier1_parse", _signal.Tier1ParseQuality, _tier1ParseReview)
+                @QualityRow("T1 Alpha", "Is the extracted idea worth attention?", "tier1_alpha", _signal.Tier1AlphaQuality, _tier1AlphaReview)
+                @QualityRow("T2 Trade Plan", "Is the trade plan or review useful?", "tier2", _signal.Tier2Quality, _tier2Review)
             </MudStack>
         </MudPaper>
 
@@ -102,15 +103,23 @@
                     <MudText>@FormatText(_signal.OutcomeStatus)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <MudText Typo="Typo.overline">Tier 0 Quality</MudText>
+                    <MudText Typo="Typo.overline">T0 Capture</MudText>
                     <MudText>@FormatQuality(_signal.Tier0Quality)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <MudText Typo="Typo.overline">Tier 1 Quality</MudText>
+                    <MudText Typo="Typo.overline">T1 Legacy Parse</MudText>
                     <MudText>@FormatQuality(_signal.Tier1Quality)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <MudText Typo="Typo.overline">Tier 2 Quality</MudText>
+                    <MudText Typo="Typo.overline">T1 Parse</MudText>
+                    <MudText>@FormatQuality(_signal.Tier1ParseQuality)</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">T1 Alpha</MudText>
+                    <MudText>@FormatQuality(_signal.Tier1AlphaQuality)</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudText Typo="Typo.overline">T2 Trade Plan</MudText>
                     <MudText>@FormatQuality(_signal.Tier2Quality)</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
@@ -163,7 +172,8 @@
 
     private SignalDetailDto? _signal;
     private SignalReviewDto? _tier0Review;
-    private SignalReviewDto? _tier1Review;
+    private SignalReviewDto? _tier1ParseReview;
+    private SignalReviewDto? _tier1AlphaReview;
     private SignalReviewDto? _tier2Review;
     private bool _loading = true;
 
@@ -172,14 +182,16 @@
         _loading = true;
         _signal = await SignalQueryService.GetDetailAsync(Id);
         _tier0Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier0");
-        _tier1Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier1");
+        _tier1ParseReview = await SignalReviewService.GetLatestReviewAsync(Id, "tier1_parse");
+        _tier1AlphaReview = await SignalReviewService.GetLatestReviewAsync(Id, "tier1_alpha");
         _tier2Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier2");
         _loading = false;
     }
 
-    private RenderFragment QualityRow(string label, string stage, string? quality, SignalReviewDto? review) => @<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
+    private RenderFragment QualityRow(string label, string prompt, string stage, string? quality, SignalReviewDto? review) => @<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="summary-footer">
         <div>
             <MudText Typo="Typo.body1">@label: @FormatQuality(quality)</MudText>
+            <MudText Typo="Typo.body2" Class="placeholder-line">@prompt</MudText>
             <MudText Typo="Typo.caption" Class="placeholder-line">@FormatQualityMeta(review)</MudText>
         </div>
         <MudStack Row="true" Spacing="1">
@@ -231,10 +243,11 @@
         }
 
         _tier0Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier0");
-        _tier1Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier1");
+        _tier1ParseReview = await SignalReviewService.GetLatestReviewAsync(Id, "tier1_parse");
+        _tier1AlphaReview = await SignalReviewService.GetLatestReviewAsync(Id, "tier1_alpha");
         _tier2Review = await SignalReviewService.GetLatestReviewAsync(Id, "tier2");
         _signal = await SignalQueryService.GetDetailAsync(Id);
-        Snackbar.Add($"Signal {Id} {FormatStage(request.Stage)} quality saved.", Severity.Success);
+        Snackbar.Add($"Signal {Id} {FormatStage(request.Stage)} rating saved.", Severity.Success);
     }
 
     private string FormatDate(DateTime? value)
@@ -274,9 +287,11 @@
     {
         return stage switch
         {
-            "tier0" => "Tier 0",
-            "tier1" => "Tier 1",
-            "tier2" => "Tier 2",
+            "tier0" => "T0 capture",
+            "tier1" => "T1 legacy parse",
+            "tier1_parse" => "T1 parse",
+            "tier1_alpha" => "T1 alpha",
+            "tier2" => "T2 trade plan",
             _ => "signal"
         };
     }

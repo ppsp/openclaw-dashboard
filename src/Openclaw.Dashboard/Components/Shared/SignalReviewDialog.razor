@@ -4,17 +4,20 @@
     <DialogContent>
         <MudStack Spacing="3">
             <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
-                Admin confirmation is required. This writes @StageLabel quality to signals.db and an audit record to dashboard.db.
+                Admin confirmation is required. This writes the @StageLabel rating to signals.db and an audit record to dashboard.db.
             </MudAlert>
 
-            <MudSelect T="string" Label="@($"{StageLabel} Quality")" @bind-Value="_decision" Required="true">
+            <MudText Typo="Typo.body2">@StagePrompt</MudText>
+
+            <MudSelect T="string" Label="@StageRatingLabel" @bind-Value="_decision" Required="true">
                 <MudSelectItem Value="@("good")">Good</MudSelectItem>
-                <MudSelectItem Value="@("medium")">Medium / Neutral</MudSelectItem>
+                <MudSelectItem Value="@("medium")">Medium</MudSelectItem>
                 <MudSelectItem Value="@("bad")">Bad</MudSelectItem>
             </MudSelect>
 
             <MudTextField T="string"
                           Label="Notes"
+                          HelperText="@StageNoteHelper"
                           Lines="4"
                           MaxLength="2000"
                           Counter="2000"
@@ -74,15 +77,44 @@
     private string? _error;
     private string StageLabel => Stage switch
     {
-        "tier0" => "Tier 0 raw signal",
-        "tier1" => "Tier 1 classification",
+        "tier0" => "Tier 0 capture",
+        "tier1" => "Tier 1 legacy parse",
+        "tier1_parse" => "Tier 1 Parse",
+        "tier1_alpha" => "Tier 1 Alpha",
         "tier2" => "Tier 2 trade plan",
         _ => "Signal"
+    };
+    private string StagePrompt => Stage switch
+    {
+        "tier0" => "Judge whether the raw item was worth saving from the source.",
+        "tier1" => "Judge whether the system understood and classified the saved source correctly.",
+        "tier1_parse" => "Judge whether extraction and classification matched the source.",
+        "tier1_alpha" => "Judge whether the extracted idea is worth attention.",
+        "tier2" => "Judge whether the trade plan, execution path, or review is useful.",
+        _ => "Judge this review stage."
+    };
+    private string StageRatingLabel => Stage switch
+    {
+        "tier0" => "Capture rating",
+        "tier1" => "Parse rating",
+        "tier1_parse" => "Parse rating",
+        "tier1_alpha" => "Idea rating",
+        "tier2" => "Trade plan rating",
+        _ => "Rating"
+    };
+    private string StageNoteHelper => Stage switch
+    {
+        "tier0" => "Was the raw item saved appropriately?",
+        "tier1" => "What did the parser understand or miss?",
+        "tier1_parse" => "What did extraction or classification get right or wrong?",
+        "tier1_alpha" => "Why is the idea worth attention or not?",
+        "tier2" => "What makes the trade plan useful or weak?",
+        _ => "Add context for the rating."
     };
 
     protected override void OnInitialized()
     {
-        Stage = Stage is "tier0" or "tier1" or "tier2" ? Stage : "tier0";
+        Stage = Stage is "tier0" or "tier1" or "tier1_parse" or "tier1_alpha" or "tier2" ? Stage : "tier0";
         _decision = string.IsNullOrWhiteSpace(Decision) ? "medium" : Decision;
         _note = CurrentNote;
     }
