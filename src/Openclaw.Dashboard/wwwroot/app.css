@@ -183,6 +183,17 @@ a, .btn-link {
     -webkit-line-clamp: 2;
 }
 
+.alpha-mode-bar,
+.alpha-actions {
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.alpha-signal-cell {
+    min-width: 280px;
+    max-width: 440px;
+}
+
 .creator-actions {
     flex-wrap: wrap;
 }
@@ -218,6 +229,17 @@ a, .btn-link {
     .signal-description {
         max-width: 100%;
         min-width: 0;
+    }
+
+    .alpha-mode-bar,
+    .alpha-actions {
+        align-items: stretch !important;
+        flex-direction: column !important;
+    }
+
+    .alpha-signal-cell {
+        min-width: 0;
+        max-width: 100%;
     }
 
     .mud-dialog {

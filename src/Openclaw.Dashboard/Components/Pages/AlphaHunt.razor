@@ -1,0 +1,270 @@
+@page "/alpha-hunt"
+@using Openclaw.Dashboard.Services
+@inject SignalQueryService SignalQueryService
+@inject DashboardTimeService DashboardTime
+
+<MudStack Spacing="3">
+    <div class="page-title">
+        <MudText Typo="Typo.h4">Alpha Hunt</MudText>
+        <MudText Typo="Typo.body1" Class="placeholder-line">
+            Ranked signals for discovery, follow-up, and trade hunting.
+        </MudText>
+    </div>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" Class="alpha-mode-bar">
+                @foreach (var mode in Modes)
+                {
+                    <MudButton Variant="@ModeVariant(mode.Key)"
+                               Color="@ModeColor(mode.Key)"
+                               StartIcon="@mode.Icon"
+                               OnClick="@(() => SetMode(mode.Key))">
+                        @mode.Label
+                    </MudButton>
+                }
+            </MudStack>
+
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" Label="Source" Dense="true" @bind-Value="_source">
+                        <MudSelectItem Value="@string.Empty">All sources</MudSelectItem>
+                        @foreach (var source in _sources)
+                        {
+                            <MudSelectItem Value="@source">@source</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="2">
+                    <MudTextField T="string" Label="Ticker" Margin="Margin.Dense" @bind-Value="_ticker" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="2">
+                    <MudDatePicker Label="From" Margin="Margin.Dense" @bind-Date="_fromDate" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="2">
+                    <MudDatePicker Label="To" Margin="Margin.Dense" @bind-Date="_toDate" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudStack Row="true" Spacing="2" Class="alpha-actions">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search" OnClick="ApplyFilters">
+                            Hunt
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetFilters">
+                            Reset
+                        </MudButton>
+                    </MudStack>
+                </MudItem>
+            </MudGrid>
+        </MudStack>
+    </MudPaper>
+
+    <MudTable @ref="_table"
+              T="SignalRow"
+              ServerData="LoadSignals"
+              Dense="true"
+              Hover="true"
+              Elevation="1"
+              RowsPerPage="20"
+              Class="oc-table">
+        <HeaderContent>
+            <MudTh>Signal</MudTh>
+            <MudTh>Route</MudTh>
+            <MudTh>Rating</MudTh>
+            <MudTh>Alpha</MudTh>
+            <MudTh>Ready</MudTh>
+            <MudTh>Idea Q</MudTh>
+            <MudTh>Parse Q</MudTh>
+            <MudTh>Reason</MudTh>
+            <MudTh>Source</MudTh>
+            <MudTh>Discovered (ET)</MudTh>
+            <MudTh>Link</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Signal">
+                <MudStack Spacing="1" Class="alpha-signal-cell">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudLink Href="@($"/signals/{context.Id}")" Typo="Typo.subtitle2">@context.Ticker</MudLink>
+                        <MudText Typo="Typo.caption" Class="placeholder-line">@context.Direction</MudText>
+                    </MudStack>
+                    <MudTooltip Text="@context.DescriptionTooltip" Placement="Placement.Bottom" Arrow="true">
+                        <span class="signal-description">@context.Description</span>
+                    </MudTooltip>
+                </MudStack>
+            </MudTd>
+            <MudTd DataLabel="Route">
+                <MudChip T="string" Size="Size.Small" Color="@RouteColor(context.Route)" Variant="@RouteVariant(context.Route)" Class="oc-route-chip">
+                    @FormatRoute(context.Route)
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Rating">@FormatInt(context.Rating)</MudTd>
+            <MudTd DataLabel="Alpha">@FormatInt(context.AlphaScore)</MudTd>
+            <MudTd DataLabel="Ready">@FormatInt(context.ReadinessScore)</MudTd>
+            <MudTd DataLabel="Idea Q">@FormatQuality(context.Tier1AlphaQuality)</MudTd>
+            <MudTd DataLabel="Parse Q">@FormatQuality(context.Tier1ParseQuality)</MudTd>
+            <MudTd DataLabel="Reason">@FormatText(context.ReasonCategory)</MudTd>
+            <MudTd DataLabel="Source">@context.SourceDisplay</MudTd>
+            <MudTd DataLabel="Discovered">@FormatDate(context.DiscoveredAt)</MudTd>
+            <MudTd DataLabel="Link">
+                @if (!string.IsNullOrWhiteSpace(context.Url))
+                {
+                    <MudTooltip Text="Open source" Placement="Placement.Bottom" Arrow="true">
+                        <MudIconButton Href="@context.Url"
+                                       Target="_blank"
+                                       rel="noopener noreferrer"
+                                       Icon="@Icons.Material.Filled.OpenInNew"
+                                       Size="Size.Small"
+                                       Color="Color.Primary" />
+                    </MudTooltip>
+                }
+                else
+                {
+                    <span>-</span>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-4 placeholder-line">No ranked signals match the current filters.</MudText>
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText Class="pa-4 placeholder-line">Loading alpha candidates...</MudText>
+        </LoadingContent>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new[] { 10, 20, 50, 100 }" />
+        </PagerContent>
+    </MudTable>
+</MudStack>
+
+@code {
+    private static readonly IReadOnlyList<AlphaMode> Modes =
+    [
+        new("highest_rated", "Highest Rated", Icons.Material.Filled.Stars, Color.Warning),
+        new("passed", "Passed", Icons.Material.Filled.TaskAlt, Color.Success),
+        new("high_alpha", "High Alpha", Icons.Material.Filled.TrendingUp, Color.Primary)
+    ];
+
+    private MudTable<SignalRow>? _table;
+    private IReadOnlyList<string> _sources = [];
+    private string _mode = "highest_rated";
+    private string _source = string.Empty;
+    private string? _ticker;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sources = await SignalQueryService.GetSourcesAsync();
+    }
+
+    private async Task<TableData<SignalRow>> LoadSignals(TableState state, CancellationToken cancellationToken)
+    {
+        var result = await SignalQueryService.SearchAsync(
+            BuildFilters(),
+            state.Page,
+            state.PageSize,
+            cancellationToken);
+
+        return new TableData<SignalRow>
+        {
+            Items = result.Items,
+            TotalItems = result.TotalItems
+        };
+    }
+
+    private SignalFilters BuildFilters()
+    {
+        return new SignalFilters
+        {
+            Source = string.IsNullOrWhiteSpace(_source) ? null : _source,
+            DiscoveryView = _mode,
+            FromDate = _fromDate,
+            ToDate = _toDate,
+            Ticker = string.IsNullOrWhiteSpace(_ticker) ? null : _ticker
+        };
+    }
+
+    private Task SetMode(string mode)
+    {
+        _mode = mode;
+        return ApplyFilters();
+    }
+
+    private Task ApplyFilters()
+    {
+        return _table?.ReloadServerData() ?? Task.CompletedTask;
+    }
+
+    private Task ResetFilters()
+    {
+        _source = string.Empty;
+        _ticker = null;
+        _fromDate = null;
+        _toDate = null;
+
+        return ApplyFilters();
+    }
+
+    private Variant ModeVariant(string mode)
+    {
+        return _mode == mode ? Variant.Filled : Variant.Outlined;
+    }
+
+    private Color ModeColor(string mode)
+    {
+        return Modes.First(item => item.Key == mode).Color;
+    }
+
+    private string FormatDate(DateTime? value)
+    {
+        return DashboardTime.FormatUtcAsDashboardTime(value);
+    }
+
+    private static string FormatInt(int? value)
+    {
+        return value?.ToString() ?? "-";
+    }
+
+    private static string FormatText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    private static string FormatQuality(string? value)
+    {
+        return value switch
+        {
+            "good" => "Good",
+            "medium" => "Medium",
+            "bad" => "Bad",
+            _ => "-"
+        };
+    }
+
+    private static string FormatRoute(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? "-"
+            : value.Replace('_', ' ');
+    }
+
+    private static Color RouteColor(string? route)
+    {
+        return route switch
+        {
+            "fast_track" => Color.Warning,
+            "pass" => Color.Success,
+            "watch" => Color.Info,
+            "reject" => Color.Error,
+            "new" => Color.Default,
+            _ => Color.Default
+        };
+    }
+
+    private static Variant RouteVariant(string? route)
+    {
+        return route is "fast_track" or "pass" or "watch" or "reject"
+            ? Variant.Filled
+            : Variant.Outlined;
+    }
+
+    private sealed record AlphaMode(string Key, string Label, string Icon, Color Color);
+}

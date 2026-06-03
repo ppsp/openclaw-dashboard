@@ -8,6 +8,8 @@ public sealed class SignalFilters
 
     public string? RouteView { get; init; }
 
+    public string? DiscoveryView { get; init; }
+
     public DateTime? FromDate { get; init; }
 
     public DateTime? ToDate { get; init; }
