@@ -34,9 +34,9 @@ public sealed class SignalQueryService(
         {
             await using var db = await signalsDbFactory.CreateDbContextAsync(cancellationToken);
             var query = ApplyFilters(db.Signals.AsNoTracking(), filters);
+            query = ApplyDiscoveryFilter(query, filters.DiscoveryView);
             var totalItems = await query.CountAsync(cancellationToken);
-            var signals = await query
-                .OrderByDescending(signal => signal.Id)
+            var signals = await ApplyDiscoveryOrdering(query, filters.DiscoveryView)
                 .Skip(page * pageSize)
                 .Take(pageSize)
                 .Select(signal => new
@@ -231,6 +231,50 @@ public sealed class SignalQueryService(
         }
 
         return query;
+    }
+
+    private static IQueryable<Signal> ApplyDiscoveryFilter(IQueryable<Signal> query, string? discoveryView)
+    {
+        return discoveryView switch
+        {
+            "highest_rated" => query.Where(signal =>
+                signal.Rating != null ||
+                signal.Tier1AlphaQuality == "good" ||
+                signal.Tier1Quality == "good" ||
+                signal.Tier2Quality == "good"),
+            "passed" => ApplyRouteFilter(query, "tier2_pending"),
+            "high_alpha" => query.Where(signal =>
+                signal.AlphaScore != null ||
+                signal.ReadinessScore != null ||
+                signal.Tier1Score != null),
+            _ => query
+        };
+    }
+
+    private static IQueryable<Signal> ApplyDiscoveryOrdering(IQueryable<Signal> query, string? discoveryView)
+    {
+        return discoveryView switch
+        {
+            "highest_rated" => query
+                .OrderByDescending(signal => signal.Rating ?? -1)
+                .ThenByDescending(signal => signal.AlphaScore ?? -1)
+                .ThenByDescending(signal => signal.ReadinessScore ?? -1)
+                .ThenByDescending(signal => signal.Tier1Score ?? -1)
+                .ThenByDescending(signal => signal.Id),
+            "passed" => query
+                .OrderByDescending(signal => signal.Tier1Pass ?? 0)
+                .ThenByDescending(signal => signal.AlphaScore ?? -1)
+                .ThenByDescending(signal => signal.ReadinessScore ?? -1)
+                .ThenByDescending(signal => signal.Rating ?? -1)
+                .ThenByDescending(signal => signal.Id),
+            "high_alpha" => query
+                .OrderByDescending(signal => signal.AlphaScore ?? -1)
+                .ThenByDescending(signal => signal.ReadinessScore ?? -1)
+                .ThenByDescending(signal => signal.Rating ?? -1)
+                .ThenByDescending(signal => signal.Tier1Score ?? -1)
+                .ThenByDescending(signal => signal.Id),
+            _ => query.OrderByDescending(signal => signal.Id)
+        };
     }
 
     private static IQueryable<Signal> ApplyRouteFilter(IQueryable<Signal> query, string routeView)
